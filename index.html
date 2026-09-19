@@ -2,35 +2,42 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>雷霆战机 · Thunder Fighter</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body {
     height:100%; background:#05060f; overflow:hidden;
+    overscroll-behavior:none;
     font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
   }
   #wrap {
     position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
     background:
       radial-gradient(ellipse at 50% 0%, #101a3a 0%, transparent 60%),
       radial-gradient(ellipse at 50% 110%, #1a0f2e 0%, transparent 60%),
       #05060f;
   }
+  /* 绝对定位 + translate(-50%,-50%)：确保画布始终精确居中且绝不被裁切 */
   canvas {
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     display:block; touch-action:none; cursor:crosshair;
     border-radius:10px;
     box-shadow:0 0 0 1px #1e2a52, 0 0 34px rgba(70,140,255,.28), 0 18px 50px rgba(0,0,0,.75);
   }
   #hint {
-    position:fixed; left:0; right:0; bottom:8px; text-align:center;
-    color:#4d5b85; font-size:12px; letter-spacing:.5px; pointer-events:none; user-select:none;
+    position:fixed; left:0; right:0; bottom:6px; text-align:center;
+    color:#4d5b85; font-size:12px; letter-spacing:.5px;
+    pointer-events:none; user-select:none; white-space:nowrap;
   }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="game"></canvas></div>
-<div id="hint">移动 WASD / 方向键 / 鼠标 &nbsp;·&nbsp; 射击 空格 或 鼠标左键 &nbsp;·&nbsp; 暂停 P &nbsp;·&nbsp; 重开 R</div>
+<div id="hint">移动 WASD / 方向键 / 鼠标拖动 &nbsp;·&nbsp; 射击 空格 或 鼠标左键 &nbsp;·&nbsp; 暂停 P &nbsp;·&nbsp; 重开 R</div>
 
 <script>
 (function () {
@@ -38,6 +45,8 @@
 
   var canvas = document.getElementById('game');
   var ctx = canvas.getContext('2d');
+  var wrap = document.getElementById('wrap');
+  var hint = document.getElementById('hint');
 
   // ---------------------------------------------------------------- 常量
   var VW = 540, VH = 960;                   // 逻辑分辨率（竖版）
@@ -78,15 +87,25 @@
   }
 
   // ---------------------------------------------------------------- 画布自适应
+  // 直接测量容器实际尺寸（而非 window.innerWidth/innerHeight），
+  // 并向下取整 + 预留边距，确保画布在任何窗口比例下都完整可见、绝不被裁切。
   function resize() {
-    var availW = Math.max(200, window.innerWidth - 28);
-    var availH = Math.max(320, window.innerHeight - 44);
+    var host = wrap || document.documentElement;
+    var availW = Math.max(120, (host.clientWidth || window.innerWidth) - 20);
+    var availH = Math.max(200, (host.clientHeight || window.innerHeight) - 40);
     var scale = Math.min(availW / VW, availH / VH);
-    var w = Math.round(VW * scale), h = Math.round(VH * scale);
-    canvas.width = w; canvas.height = h;
-    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    var w = Math.floor(VW * scale), h = Math.floor(VH * scale);
+    if (w < 80 || h < 140) return;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+    }
     var dpr = window.devicePixelRatio || 1;
     ctx.setTransform((w / VW) * dpr, 0, 0, (h / VH) * dpr, 0, 0);
+    if (hint) {
+      hint.style.display = (host.clientHeight || window.innerHeight) < 560 ? 'none' : '';
+    }
   }
 
   // ---------------------------------------------------------------- 输入
@@ -114,29 +133,81 @@
 
   function toWorld(clientX, clientY) {
     var r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return { x: 0, y: 0 };
     return {
       x: (clientX - r.left) * (VW / r.width),
       y: (clientY - r.top) * (VH / r.height)
     };
   }
 
-  canvas.addEventListener('pointermove', function (e) {
+  // 指针采用「相对拖动」：只响应真实的位移量，不做绝对位置吸附。
+  // 这样既不会在没有输入时自行漂移，也不会因画布缩放而错位。
+  var drag = { on: false, id: null, x: 0, y: 0 };
+
+  function dragStart(e) {
     var p = toWorld(e.clientX, e.clientY);
-    game.mouse.x = p.x; game.mouse.y = p.y; game.mouse.active = true;
-  });
+    drag.on = true; drag.id = e.pointerId; drag.x = p.x; drag.y = p.y;
+    if (canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+    }
+    game.mouse.active = true;
+  }
+
+  function dragMove(e) {
+    if (!drag.on || e.pointerId !== drag.id) return;
+    var p = toWorld(e.clientX, e.clientY);
+    var dx = p.x - drag.x, dy = p.y - drag.y;
+    drag.x = p.x; drag.y = p.y;
+    // 位移直接施加到飞船上（相对移动，永不漂移）
+    if (!game.over && !game.paused) {
+      var pl = game.player;
+      pl.x += dx; pl.y += dy;
+      pl.tilt += (Math.max(-1, Math.min(1, dx * 0.045)) - pl.tilt) * 0.35;
+    }
+    game.mouse.x = p.x; game.mouse.y = p.y;
+  }
+
+  function dragEnd(e) {
+    if (e && e.pointerId !== undefined && e.pointerId !== drag.id) return;
+    drag.on = false; drag.id = null;
+    game.mouse.down = false;
+  }
 
   canvas.addEventListener('pointerdown', function (e) {
     e.preventDefault();
-    var p = toWorld(e.clientX, e.clientY);
-    game.mouse.x = p.x; game.mouse.y = p.y; game.mouse.active = true; game.mouse.down = true;
-    canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
-    if (game.over && game.gameOverTimer <= 0) { reset(); game.mouse.down = true; }
+    dragStart(e);
+    game.mouse.down = true;
+    if (game.over && game.gameOverTimer <= 0) {
+      reset();
+      dragStart(e);
+      game.mouse.down = true;
+    }
     game.started = true;
   });
 
-  window.addEventListener('pointerup', function () { game.mouse.down = false; });
-  window.addEventListener('blur', function () { game.keys = Object.create(null); game.mouse.down = false; });
+  canvas.addEventListener('pointermove', function (e) { e.preventDefault(); dragMove(e); });
+  canvas.addEventListener('pointerup', dragEnd);
+  canvas.addEventListener('pointercancel', dragEnd);
+  canvas.addEventListener('lostpointercapture', dragEnd);
+  window.addEventListener('pointerup', dragEnd);
+  window.addEventListener('pointercancel', dragEnd);
+
+  // 失焦 / 切后台时清空所有输入状态，避免按键或拖动被「粘住」
+  function clearInput() {
+    game.keys = Object.create(null);
+    game.mouse.down = false;
+    drag.on = false; drag.id = null;
+  }
+  window.addEventListener('blur', clearInput);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { clearInput(); game.paused = true; }
+  });
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', function () { setTimeout(resize, 120); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(resize).observe(wrap || document.documentElement);
+  }
 
   // ---------------------------------------------------------------- 音效（Web Audio 合成，极轻量）
   var actx = null, muted = false;
@@ -398,20 +469,9 @@
       p.x += (dx / len) * PLAYER.speed * game.dt;
       p.y += (dy / len) * PLAYER.speed * game.dt;
       p.tilt += ((dx * 0.22) - p.tilt) * 0.2;
-    } else {
+    } else if (!drag.on) {
+      // 无键盘、无拖动 → 机翼回正（绝不产生位移）
       p.tilt += (0 - p.tilt) * 0.15;
-    }
-
-    // 鼠标 / 触屏拖动
-    if (game.mouse.active && !(dx || dy)) {
-      var tx = game.mouse.x, ty = game.mouse.y - 6;
-      var ddx = tx - p.x, ddy = ty - p.y;
-      var d = Math.sqrt(ddx * ddx + ddy * ddy);
-      if (d > 2) {
-        var step = Math.min(d, 8.5 * game.dt);
-        p.x += (ddx / d) * step; p.y += (ddy / d) * step;
-        p.tilt += ((ddx / d) * 0.2 - p.tilt) * 0.2;
-      }
     }
 
     p.x = Math.max(p.w / 2, Math.min(VW - p.w / 2, p.x));
@@ -1007,7 +1067,7 @@
     centerText('按 空格 / Enter  或 点击屏幕', VH * 0.52 + 34, 14, '#7f8fb8');
 
     var lines = [
-      '移动：WASD / 方向键 / 鼠标拖动',
+      '移动：WASD / 方向键 / 按住鼠标拖动',
       '射击：按住 空格 或 鼠标左键（自动连射）',
       '暂停：P      重开：R      静音：M',
       '',
