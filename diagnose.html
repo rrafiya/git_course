@@ -237,15 +237,16 @@
     item('页面无滚动', o.win.scrollW <= o.win.innerW + 1 && o.win.scrollH <= o.win.innerH + 1,
       'scroll ' + o.win.scrollW + 'x' + o.win.scrollH);
 
+    // 页面级提示条已移除（操作说明画在画布内），此处仅确认它不再遮挡画面
     var hint = document.getElementById('hint');
     if (hint) {
       var hr = hint.getBoundingClientRect();
-      var visible = getComputedStyle(hint).display !== 'none' && hr.height > 0;
+      var visible = getComputedStyle(hint).display !== 'none' && !hint.hidden && hr.height > 0;
+      item('页面级提示条已隐藏（全屏显示）', !visible,
+        visible ? '提示条仍可见，会遮挡全屏画面' : 'display=' + getComputedStyle(hint).display);
       if (visible) {
         o.hintGap = hr.top - cv.bottom;
-        item('画布未压住底部提示条', o.hintGap >= -0.5, '间距 ' + f(o.hintGap) + 'px（>=0 正常）');
-      } else {
-        item('底部提示条已隐藏（窗口较矮）', true, 'display=' + getComputedStyle(hint).display);
+        item('画布未被提示条遮挡', o.hintGap >= -0.5, '间距 ' + f(o.hintGap) + 'px');
       }
     }
 
@@ -376,8 +377,7 @@
     row('画布位置 left / top', f(cv.left) + ' / ' + f(cv.top));
     row('画布右下角 right / bottom', f(cv.right) + ' / ' + f(cv.bottom));
     row('页面滚动尺寸', o.win.scrollW + ' × ' + o.win.scrollH);
-    if (o.hintGap !== undefined) row('画布与提示条间距', f(o.hintGap) + 'px');
-    if (o.contents && o.contents.lit) {
+    if (o.hintGap !== undefined) row('画布与提示条间距', f(o.hintGap) + 'px');    if (o.contents && o.contents.lit) {
       row('绘制内容包围盒', 'x ' + o.contents.minX + '..' + o.contents.maxX +
         '  y ' + o.contents.minY + '..' + o.contents.maxY);
     }

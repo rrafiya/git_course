@@ -22,28 +22,22 @@
       radial-gradient(ellipse at 50% 110%, #1a0f2e 0%, transparent 60%),
       #05060f;
   }
-  /* 绝对定位：left:50% + translateX(-50%) 水平精确居中；
-     垂直位置由 JS 设置 top（画布顶边坐标），从而能给底部提示条留出空间 */
+  /* 全屏显示：绝对定位，left:50% + translateX(-50%) 水平居中，
+     垂直位置由 JS 设置 top。画布等比铺满窗口，不留边距与圆角。 */
   canvas {
     position:absolute; left:50%; top:0; transform:translateX(-50%);
     display:block; touch-action:none; cursor:crosshair;
-    border-radius:10px;
-    box-shadow:0 0 0 1px #1e2a52, 0 0 34px rgba(70,140,255,.28), 0 18px 50px rgba(0,0,0,.75);
+    background:#05060f;
   }
-  #hint {
-    position:fixed; left:0; right:0; bottom:6px; padding:0 10px; text-align:center;
-    color:#5d6f9c; font-size:12px; line-height:16px; letter-spacing:.3px;
-    text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.7);
-    pointer-events:none; user-select:none;
-    /* 不再强制不换行：窄屏下折行而不是被裁掉 */
-  }
-  /* 每个操作项作为一个整体换行，避免把"重开"这类词拆开 */
-  #hint span { white-space:nowrap; }
+  /* 页面级操作提示已取消（避免遮挡全屏画面）；
+     操作说明改为画在画布内（标题页 / 暂停页），F 键可切换原生全屏 */
+  #hint { display:none !important; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="game"></canvas></div>
-<div id="hint"><span>移动 WASD / 方向键 / 鼠标拖动</span> · <span>射击 空格 或 鼠标左键</span> · <span>暂停 P</span> · <span>重开 R</span></div>
+<!-- 操作说明画在画布内（标题页/暂停页），不再使用页面级提示条 -->
+<div id="hint" hidden></div>
 
 <script>
 (function () {
@@ -98,9 +92,9 @@
   // 做法：多来源取最小可用尺寸 → 去掉一切下限把戏 → 向下取整并夹紧，
   //       保证任何窗口比例（含极扁、极小、容器尺寸为 0 的初始帧）都不会溢出。
   var MIN_SCALE = 0.14;            // 极端窗口下的最小缩放，保证操作区域仍然可见
-  function measureHost() {
-    // #wrap 是 position:fixed; inset:0 → 它就是可见区域本身。
-    // 读取它的盒子（多处来源取最大，兼容不同浏览器/布局时机）。
+  // 可视区域的**视觉尺寸**（CSS 像素），供 selfCheck 与画布的
+  // getBoundingClientRect() 直接比较 —— 两者同一坐标系，不涉及任何换算。
+  function measureViewport() {
     var w = 0, h = 0;
     if (wrap) {
       w = Math.max(w, wrap.clientWidth || 0);
@@ -114,10 +108,6 @@
     var de = document.documentElement;
     w = Math.max(w, (de && de.clientWidth) || 0);
     h = Math.max(h, (de && de.clientHeight) || 0);
-
-    // 上限：取「容器」与「视口」中更紧的一侧。
-    // 画布是绝对定位居中在 #wrap 上的，只要尺寸同时不超过这两者，
-    // 无论居中基准是哪一个，画布都一定完整落在可见区域内。
     var vw = (window.visualViewport && window.visualViewport.width) || 0;
     var vh = (window.visualViewport && window.visualViewport.height) || 0;
     var ww = window.innerWidth || 0, wh = window.innerHeight || 0;
@@ -125,18 +115,25 @@
     if (vh > 0) wh = wh > 0 ? Math.min(wh, vh) : vh;
     if (ww > 0) w = w > 0 ? Math.min(w, ww) : ww;
     if (wh > 0) h = h > 0 ? Math.min(h, wh) : wh;
-
     if (w <= 0) w = 320;
     if (h <= 0) h = 480;
+    return { w: w, h: h };
+  }
+
+  function measureHost() {
+    // 先取可视区域的逻辑尺寸
+    var vp = measureViewport();
+    var ww = window.innerWidth || 0;
+    var w = vp.w, h = vp.h;
 
     // ---------------------------------------------------------------
-    // 浏览器缩放修正（重要）：
+    // 浏览器缩放修正：
     // window.innerWidth/innerHeight 是**逻辑坐标**，而 canvas.style.width
     // 与 getBoundingClientRect() 是**视觉坐标**。用户按 Ctrl+/Ctrl- 缩放后
-    // 两者不再相等（实测 125% 缩放时画布底部溢出窗口 175px）。
-    // 因此把计算出的逻辑尺寸乘以 zoom 因子，与视觉坐标对齐。
+    // 两者不再相等（实测 125% 缩放时画布底部会溢出窗口）。
+    // 因此把逻辑尺寸乘以 zoom 因子，与视觉坐标对齐。
     var zoom = 1;
-    if (ww > 0) zoom = window.innerWidth / ww;
+    if (ww > 0 && vp.w > 0) zoom = ww / vp.w;
     if (!isFinite(zoom) || zoom <= 0) zoom = 1;
     if (zoom < 0.5 || zoom > 2) zoom = 1;      // 异常值不参与修正
     w = w * zoom;
@@ -148,33 +145,20 @@
   function resize() {
     var host = measureHost();
 
-    // 预留空间：底部按提示条**实测高度**预留（可能已折成多行），
-    // 否则提示条会压在画布上（实测过会重叠）
-    var PAD_X = 8, PAD_TOP = 14, GAP_BOTTOM = 8;
-    var hintH = 0;
-    if (hint) {
-      if (host.h < 560) {
-        hint.style.display = 'none';           // 极矮窗口下隐藏提示条
-      } else {
-        hint.style.display = '';
-      }
-      var rect = hint.getBoundingClientRect();
-      if (hint.style.display !== 'none') {
-        // 折行后实际需要的高度（可能 1~3 行）
-        hintH = (rect.height > 0 ? rect.height : 16) + 6;
-      }
-    }
-    var availW = Math.max(40, host.w - PAD_X * 2);
-    var availH = Math.max(60, host.h - PAD_TOP - (hintH ? hintH + GAP_BOTTOM : 10));
+    // 全屏最大化：画布吃满可视区域。
+    // 不再预留边距，也不再为底部提示条留位置（提示条已隐藏）。
+    // 保持 540:960 逻辑比例 → 等比放大到"贴满"其中一条边，另一方向留黑边。
+    var availW = Math.max(40, host.w);
+    var availH = Math.max(60, host.h);
 
     var scale = Math.min(availW / VW, availH / VH);
     if (!isFinite(scale) || scale <= 0) return;
-    if (scale > 1) scale = 1;                      // 不放大到超过逻辑分辨率
     if (scale < MIN_SCALE) scale = MIN_SCALE;      // 极扁窗口下保底
+    // 注意：不再限制 scale <= 1 —— 允许放大以铺满大窗口
 
     var w = Math.floor(VW * scale);
     var h = Math.floor(VH * scale);
-    // 硬夹紧：画布尺寸绝不超过可见区域。这是"内容不会跑到窗口外"的最终保证，
+    // 硬夹紧：画布尺寸绝不超过可视区域。
     // 即使上面的缩放计算因任何异常尺寸得到过大结果，这一步也能兜住。
     if (w > host.w) w = host.w;
     if (h > host.h) h = host.h;
@@ -187,12 +171,8 @@
       canvas.style.width = w + 'px';
       canvas.style.height = h + 'px';
     }
-    // 垂直位置：在「顶部边距」到「提示条上方」之间的区域里居中。
-    // 这里 top 就是画布顶边坐标（CSS 用 translateX 只做水平居中，不再上移半高）
-    var areaTop = PAD_TOP;
-    var areaBottom = host.h - (hintH ? hintH + GAP_BOTTOM : 10);
-    if (areaBottom - areaTop < h) areaTop = Math.max(0, areaBottom - h);
-    canvas.style.top = Math.round(areaTop + (areaBottom - areaTop - h) / 2) + 'px';
+    // 全屏时垂直居中（CSS 里 translateX(-50%) 已做水平居中）
+    canvas.style.top = Math.round((host.h - h) / 2) + 'px';
 
     var dpr = window.devicePixelRatio || 1;
     ctx.setTransform((w / VW) * dpr, 0, 0, (h / VH) * dpr, 0, 0);
@@ -210,11 +190,39 @@
     game.keys[e.code] = true;
     if (e.code === 'KeyP' && !game.over) game.paused = !game.paused;
     if (e.code === 'KeyR') { reset(); }
+    if (e.code === 'KeyF') { toggleFullscreen(); }
     if (e.code === 'Enter' || e.code === 'Space') {
       if (game.over && game.gameOverTimer <= 0) { reset(); }
     }
     game.started = true;
   });
+
+  // ---------------------------------------------------------------- 原生全屏
+  // F 键进入/退出浏览器全屏（沉浸式，隐藏地址栏等浏览器界面）。
+  // 注意：默认就已是「画布铺满窗口」，F 只是进一步去掉浏览器外壳。
+  function toggleFullscreen() {
+    try {
+      var el = document.documentElement;
+      var isFs = document.fullscreenElement || document.webkitFullscreenElement ||
+        document.msFullscreenElement;
+      if (!isFs) {
+        var req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+        if (req) {
+          var p = req.call(el);
+          if (p && p.catch) p.catch(function () { /* 用户手势/权限原因失败，忽略 */ });
+        }
+      } else {
+        var exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+        if (exit) exit.call(document);
+      }
+    } catch (err) { /* 忽略：不支持全屏 API 时不影响游戏 */ }
+  }
+  function onFullscreenChange() { resize(); setTimeout(resize, 120); setTimeout(resize, 320); }
+  ['fullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'].forEach(function (ev) {
+    document.addEventListener(ev, onFullscreenChange);
+  });
+  // 双击画面也可切换全屏
+  canvas.addEventListener('dblclick', function (e) { e.preventDefault(); toggleFullscreen(); });
 
   window.addEventListener('keyup', function (e) {
     if (HANDLED[e.code]) e.preventDefault();
@@ -1270,7 +1278,7 @@
     var lines = [
       '移动：WASD / 方向键 / 按住鼠标拖动',
       '射击：按住 空格 或 鼠标左键（自动连射）',
-      '暂停：P      重开：R      静音：M',
+      '暂停：P      重开：R      静音：M      全屏：F',
       '',
       '吃到 W 升级火力 · S 护盾 · R 速射 · + 回血',
       '每 5 波出现 BOSS，小心弹幕！'
@@ -1283,7 +1291,7 @@
   function drawPaused() {
     dim(0.6);
     centerText('已 暂 停', VH * 0.45, 40, '#9fe8ff', null, VW - 80);
-    centerText('按 P 继续', VH * 0.45 + 40, 16, '#8ea2cc', null, VW - 80);
+    centerText('按 P 继续      按 F 全屏', VH * 0.45 + 40, 16, '#8ea2cc', null, VW - 80);
   }
 
   function drawGameOver() {
@@ -1314,24 +1322,17 @@
   }
 
   // 自愈：定期核对画布的**实际视觉尺寸**是否还在可视区域内。
-  // 用「画布自身渲染尺寸(boundingClientRect) ↔ 其 style 尺寸」的比值来
-  // 判定环境缩放（浏览器 Ctrl+/- 缩放、CSS zoom 等都会造成两者不等），
-  // 一旦超出可视区域就按比例缩回。这条路不依赖任何坐标换算假设，
-  // 因此在任何缩放环境下都成立。
+  // 用「画布自身渲染尺寸(boundingClientRect) ↔ 可视区域(measureViewport)」
+  // 直接比较 —— 两者同属视觉坐标系，不依赖任何坐标换算假设，
+  // 因此在浏览器缩放（Ctrl+/-）、CSS zoom 等环境下同样成立。
+  var lastAvailW = 0, lastAvailH = 0;
   function selfCheck() {
     if (!document.body || !document.body.isConnected) return;
     var r = canvas.getBoundingClientRect();
     if (!r.width || !r.height) return;
 
-    var availW = (wrap && wrap.clientWidth) || 0;
-    var availH = (wrap && wrap.clientHeight) || 0;
-    if (wrap && wrap.getBoundingClientRect) {
-      var wr = wrap.getBoundingClientRect();
-      if (wr.width > 0) availW = availW > 0 ? Math.min(availW, wr.width) : wr.width;
-      if (wr.height > 0) availH = availH > 0 ? Math.min(availH, wr.height) : wr.height;
-    }
-    if (availW <= 0) availW = window.innerWidth || 320;
-    if (availH <= 0) availH = window.innerHeight || 480;
+    var vp = measureViewport();
+    var availW = vp.w, availH = vp.h;
 
     // 缩放导致内容超出可视区域 → 按比例缩回，同时同步缓冲区保持清晰
     if (r.width > availW + 1 || r.height > availH + 1) {
@@ -1347,13 +1348,23 @@
       ctx.setTransform((nw / VW) * dpr, 0, 0, (nh / VH) * dpr, 0, 0);
       return;
     }
-    // 内容明显小于可视区域（例如刚退出缩放）→ 重新计算
-    if (r.width < availW * 0.5 || r.height < availH * 0.5) resize();
+
+    // 仅当可视区域**明显变大**时才重新计算（例如退出缩放/窗口变大）。
+    // 注意：不能简单用"画布小于可用区域"来判断，否则会与上面的缩回逻辑
+    // 互相打架 —— 缩回后画布本就小于可用区域，会造成来回振荡
+    // （实测 125% 缩放下画布在 391 与 613 之间反复跳动）。
+    if (availW > lastAvailW * 1.2 || availH > lastAvailH * 1.2 ||
+        availW < lastAvailW * 0.8 || availH < lastAvailH * 0.8) {
+      lastAvailW = availW; lastAvailH = availH;
+      resize();
+    }
   }
 
   // ---------------------------------------------------------------- 启动
   reset();
   resize();
+  var vpInit = measureViewport();
+  lastAvailW = vpInit.w; lastAvailH = vpInit.h;
   setTimeout(resize, 0);      // 布局完成后补一次
   setTimeout(resize, 250);    // 字体/滚动条就绪后再补一次
   setInterval(selfCheck, 700);
