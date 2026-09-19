@@ -1126,9 +1126,40 @@
     ctx.fillRect(0, 0, VW, VH);
   }
 
-  function centerText(text, y, size, color, font) {
-    ctx.font = 'bold ' + size + 'px ' + (font || '"Microsoft YaHei",sans-serif');
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // 文字自适应：先按期望字号测量，超出可用宽度就等比缩小。
+  // 这样无论用户系统的字体与度量如何（字体回退差异很大），
+  // 文字都不可能超出画布被裁切。下限设得很小（4px），
+  // 保证"宽度不超限"优先于"字号尽量大"。
+  var SAFE_W = VW - 36;                       // 左右各留 18 逻辑像素
+  var MIN_FONT = 4;
+  function fitSize(text, size, maxW, font) {
+    var fam = font || '"Microsoft YaHei",sans-serif';
+    var cap = maxW || SAFE_W;
+    ctx.font = 'bold ' + size + 'px ' + fam;
+    var w = ctx.measureText(text).width;
+    // 迭代缩小，直到放进 cap 或到达字号下限
+    var guard = 0;
+    while (w > cap && size > MIN_FONT && guard++ < 24) {
+      var next = Math.floor(size * cap / w);
+      if (next >= size) next = size - 1;      // 确保每轮都在缩小，避免死循环
+      if (next < MIN_FONT) next = MIN_FONT;
+      size = next;
+      ctx.font = 'bold ' + size + 'px ' + fam;
+      w = ctx.measureText(text).width;
+    }
+    // 最后兜底：若仍超出（例如已达下限），继续缩到能放下为止
+    while (w > cap && size > 1) {
+      size -= 1;
+      ctx.font = 'bold ' + size + 'px ' + fam;
+      w = ctx.measureText(text).width;
+    }
+    return size;
+  }
+
+  function centerText(text, y, size, color, font, maxW) {
+    size = fitSize(text, size, maxW, font);
+    ctx.textAlign = 'center';                 // 必须在设置 font 之后确认
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(0,0,0,.65)';
     ctx.fillText(text, VW / 2 + 2, y + 2);
     ctx.fillStyle = color;
@@ -1140,12 +1171,12 @@
     var pulse = 0.75 + Math.sin(game.t * 0.06) * 0.25;
     ctx.save();
     ctx.shadowColor = '#4dd4ff'; ctx.shadowBlur = 24 * pulse;
-    centerText('雷 霆 战 机', VH * 0.30, 46, '#9fe8ff');
+    centerText('雷霆战机', VH * 0.30, 48, '#9fe8ff', null, VW - 80);
     ctx.restore();
-    centerText('THUNDER  FIGHTER', VH * 0.30 + 40, 15, '#5f7199', '"Consolas",monospace');
+    centerText('THUNDER  FIGHTER', VH * 0.30 + 42, 15, '#5f7199', '"Consolas",monospace', VW - 80);
 
-    centerText('开始游戏', VH * 0.52, 26, 'rgba(255,255,255,' + (0.45 + pulse * 0.55) + ')');
-    centerText('按 空格 / Enter  或 点击屏幕', VH * 0.52 + 34, 14, '#7f8fb8');
+    centerText('开始游戏', VH * 0.52, 26, 'rgba(255,255,255,' + (0.45 + pulse * 0.55) + ')', null, VW - 80);
+    centerText('按 空格 / Enter  或 点击屏幕', VH * 0.52 + 34, 14, '#7f8fb8', null, VW - 60);
 
     var lines = [
       '移动：WASD / 方向键 / 按住鼠标拖动',
@@ -1156,27 +1187,29 @@
       '每 5 波出现 BOSS，小心弹幕！'
     ];
     for (var i = 0; i < lines.length; i++) {
-      centerText(lines[i], VH * 0.63 + i * 24, 14, i === 4 ? '#ffd166' : '#8ea2cc');
+      centerText(lines[i], VH * 0.63 + i * 26, 14, i === 4 ? '#ffd166' : '#8ea2cc', null, VW - 60);
     }
   }
 
   function drawPaused() {
     dim(0.6);
-    centerText('已 暂 停', VH * 0.45, 40, '#9fe8ff');
-    centerText('按 P 继续', VH * 0.45 + 40, 16, '#8ea2cc');
+    centerText('已 暂 停', VH * 0.45, 40, '#9fe8ff', null, VW - 80);
+    centerText('按 P 继续', VH * 0.45 + 40, 16, '#8ea2cc', null, VW - 80);
   }
 
   function drawGameOver() {
     dim(0.78);
     var isBest = game.score >= game.best && game.score > 0;
-    centerText('G A M E   O V E R', VH * 0.36, 38, '#ff6b8a');
-    centerText('得分  ' + game.score, VH * 0.46, 30, '#8fe3ff');
-    centerText('最高  ' + game.best, VH * 0.46 + 34, 17, '#5f7199');
-    centerText('到达波次  ' + game.wave, VH * 0.46 + 60, 15, '#5f7199');
-    if (isBest) centerText('★ 新纪录 ★', VH * 0.46 + 90, 18, '#ffd166');
+    // 不再用 "G A M E   O V E R" 的手工空格（宽度翻倍、极易被裁且居中会偏），
+    // 改用正常文本 + 自适应字号
+    centerText('GAME OVER', VH * 0.36, 46, '#ff6b8a', null, VW - 80);
+    centerText('得分  ' + game.score, VH * 0.46, 30, '#8fe3ff', null, VW - 80);
+    centerText('最高  ' + game.best, VH * 0.46 + 34, 17, '#5f7199', null, VW - 80);
+    centerText('到达波次  ' + game.wave, VH * 0.46 + 60, 15, '#5f7199', null, VW - 80);
+    if (isBest) centerText('★ 新纪录 ★', VH * 0.46 + 90, 18, '#ffd166', null, VW - 80);
     var pulse = 0.5 + Math.sin(game.t * 0.09) * 0.5;
     centerText('按 空格 / Enter / 点击 重新开始', VH * 0.72, 18,
-      'rgba(255,255,255,' + (0.45 + pulse * 0.55) + ')');
+      'rgba(255,255,255,' + (0.45 + pulse * 0.55) + ')', null, VW - 60);
   }
 
   // ---------------------------------------------------------------- 主循环
