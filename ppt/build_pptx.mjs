@@ -18,7 +18,46 @@ import zlib from 'node:zlib';
 const ROOT = process.cwd();
 const IMG = path.join(ROOT, 'ppt', 'img');
 const deck = JSON.parse(fs.readFileSync(path.join(ROOT, 'ppt', 'deck.json'), 'utf8'));
-const OUT = path.join(ROOT, 'ppt', deck.meta.out);
+const OUT = process.env.PROBE_OUT
+  ? path.resolve(process.env.PROBE_OUT)
+  : path.join(ROOT, 'ppt', deck.meta.out);
+
+// ---- 探针模式：生成不同复杂度的最小文件，用于定位 PowerPoint 修复提示 ----
+// PROBE_MODE = blank | text | image | mixed，PROBE_SLIDES = 页数
+if (process.env.PROBE_MODE) {
+  const mode = process.env.PROBE_MODE;
+  const n = Number(process.env.PROBE_SLIDES || 1);
+  const mk = (o) => Object.assign({ layout: 'content', title: '', lines: [] }, o);
+  const sets = {
+    blank: [mk({ layout: 'image', image: '', title: '', lines: [] })],
+    text: [mk({
+      title: '纯文字页',
+      lines: ['H|标题行', 'B|普通要点一行', 'B|再来一条要点', 'C|git status', 'Q|这是一句引用', 'N|这是注释']
+    })],
+    image: [mk({ layout: 'image', image: '02_three_areas.png', title: '带图片页', caption: '示意图' })],
+    mixed: [
+      mk({ title: '混合页 A', lines: ['B|第一条', 'B|第二条'] }),
+      mk({ layout: 'image', image: '03_push_pull.png', title: '混合页 B', caption: '图' }),
+      mk({ title: '混合页 C', lines: ['H|小标题', 'C|git add -A'] })
+    ]
+  };
+  deck.slides = (sets[mode] || sets.text).slice(0, n);
+  deck.meta = Object.assign({}, deck.meta, { out: path.basename(OUT), title: 'probe-' + mode });
+  console.log(`[probe] mode=${mode} slides=${deck.slides.length} -> ${path.basename(OUT)}`);
+}
+
+// ---- 特性开关：用于逐项排查 PowerPoint 修复提示的来源 ----
+// 设为 "0" 可关闭对应特性，用来做对照实验
+const F = {
+  theme: process.env.FEAT_THEME !== '0',                 // 是否打包 theme1.xml
+  exProps: process.env.FEAT_EXPROPS !== '0',             // presProps/viewProps/tableStyles
+  autofit: process.env.FEAT_AUTOFIT !== '0',             // normAutofit 兜底
+  zeropad: process.env.FEAT_ZEROPAD !== '0'              // 文本内边距归零
+};
+if (process.env.FEAT_THEME || process.env.FEAT_EXPROPS || process.env.FEAT_AUTOFIT || process.env.FEAT_ZEROPAD) {
+  console.log('[feat]', JSON.stringify(F));
+}
+
 
 const EMU = 914400;                            // EMU per inch
 const PX = 96;                                 // CSS px per inch
@@ -97,10 +136,11 @@ function rPr({ size = 1400, color = C.bullet, bold = 0, font = 'Microsoft YaHei'
     `<a:latin typeface="${latin}"/><a:ea typeface="${ea}"/><a:cs typeface="${latin}"/></a:rPr>`;
 }
 
-// 统一 bodyPr：内边距归零 + normAutofit 兜底
+// 统一 bodyPr：内边距归零 + normAutofit 兜底（内边距可影响换行位置）
 function bodyPr({ anchor = 't', autofit = true } = {}) {
-  return `<a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="${anchor}">` +
-    (autofit ? `<a:normAutofit/>` : `<a:noAutofit/>`) + `</a:bodyPr>`;
+  const pad = F.zeropad ? ' lIns="0" rIns="0" tIns="0" bIns="0"' : '';
+  const fit = (autofit && F.autofit) ? `<a:normAutofit/>` : `<a:noAutofit/>`;
+  return `<a:bodyPr wrap="square"${pad} anchor="${anchor}">${fit}</a:bodyPr>`;
 }
 
 function para(runs, opts = {}) {
@@ -417,7 +457,91 @@ const slideMaster = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n
 
 const slideMasterRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`;
+  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>` +
+  (F.theme
+    ? `<Relationship Id="rIdTheme" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>`
+    : '') +
+  `</Relationships>`;
+
+// ---------------------------------------------------------------- 主题部件
+// 主题（theme1.xml）是 PowerPoint 期望的必需部件：它提供配色方案、字体方案
+// 与格式方案（fillStyleLst / lnStyleLst / effectStyleLst / bgFillStyleLst）。
+// 缺失时 PowerPoint 会提示「内容需要修复」。
+// 下面这份是按标准 Office 主题结构自己生成的（深色配色 + 微软雅黑）。
+const themeFonts = [
+  ['zh-CN', '宋体'], ['ja-JP', 'ＭＳ Ｐゴシック'], ['ko-KR', '맑은 고딕'],
+  ['zh-TW', '新細明體'], ['ru-RU', 'Arial'], ['en-US', 'Microsoft YaHei'], ['ar-SA', 'Arial']
+];
+const fontSub = (fonts) => themeFonts.map(([s, t]) =>
+  `<a:font script="${s}" typeface="${t}"/>`).join('');
+
+const theme = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
+  `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="GitTutorial">` +
+  `<a:themeElements>` +
+  // 配色方案
+  `<a:clrScheme name="GitTutorial">` +
+  `<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>` +
+  `<a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>` +
+  `<a:dk2><a:srgbClr val="${C.bg}"/></a:dk2>` +
+  `<a:lt2><a:srgbClr val="${C.panel}"/></a:lt2>` +
+  `<a:accent1><a:srgbClr val="${C.accent}"/></a:accent1>` +
+  `<a:accent2><a:srgbClr val="${C.heading}"/></a:accent2>` +
+  `<a:accent3><a:srgbClr val="${C.quote}"/></a:accent3>` +
+  `<a:accent4><a:srgbClr val="${C.title}"/></a:accent4>` +
+  `<a:accent5><a:srgbClr val="${C.code}"/></a:accent5>` +
+  `<a:accent6><a:srgbClr val="${C.muted}"/></a:accent6>` +
+  `<a:hlink><a:srgbClr val="${C.accent}"/></a:hlink>` +
+  `<a:folHlink><a:srgbClr val="${C.quote}"/></a:folHlink>` +
+  `</a:clrScheme>` +
+  // 字体方案
+  `<a:fontScheme name="GitTutorial">` +
+  `<a:majorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/>` +
+  `<a:cs typeface=""/>${fontSub()}</a:majorFont>` +
+  `<a:minorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/>` +
+  `<a:cs typeface=""/>${fontSub()}</a:minorFont>` +
+  `</a:fontScheme>` +
+  // 格式方案（必须四个列表、每类 3 项）
+  `<a:fmtScheme name="GitTutorial">` +
+  `<a:fillStyleLst>` +
+  `<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>` +
+  `<a:gradFill rotWithShape="1"><a:gsLst>` +
+  `<a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="50000"/><a:satMod val="300000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="35000"><a:schemeClr val="phClr"><a:tint val="37000"/><a:satMod val="300000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="100000"><a:schemeClr val="phClr"><a:tint val="15000"/><a:satMod val="350000"/></a:schemeClr></a:gs>` +
+  `</a:gsLst><a:lin ang="16200000" scaled="1"/></a:gradFill>` +
+  `<a:gradFill rotWithShape="1"><a:gsLst>` +
+  `<a:gs pos="0"><a:schemeClr val="phClr"><a:shade val="51000"/><a:satMod val="130000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="80000"><a:schemeClr val="phClr"><a:shade val="93000"/><a:satMod val="130000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="94000"/><a:satMod val="135000"/></a:schemeClr></a:gs>` +
+  `</a:gsLst><a:lin ang="16200000" scaled="0"/></a:gradFill>` +
+  `</a:fillStyleLst>` +
+  `<a:lnStyleLst>` +
+  `<a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"><a:shade val="95000"/><a:satMod val="105000"/></a:schemeClr></a:solidFill><a:prstDash val="solid"/></a:ln>` +
+  `<a:ln w="25400" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln>` +
+  `<a:ln w="38100" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln>` +
+  `</a:lnStyleLst>` +
+  `<a:effectStyleLst>` +
+  `<a:effectStyle><a:effectLst><a:outerShdw blurRad="40000" dist="20000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="38000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle>` +
+  `<a:effectStyle><a:effectLst><a:outerShdw blurRad="40000" dist="23000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="35000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle>` +
+  `<a:effectStyle><a:effectLst><a:outerShdw blurRad="40000" dist="23000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="35000"/></a:srgbClr></a:outerShdw></a:effectLst><a:scene3d><a:camera prst="orthographicFront"><a:rot lat="0" lon="0" rev="0"/></a:camera><a:lightRig rig="threePt" dir="t"><a:rot lat="0" lon="0" rev="1200000"/></a:lightRig></a:scene3d><a:sp3d><a:bevelT w="63500" h="25400"/></a:sp3d></a:effectStyle>` +
+  `</a:effectStyleLst>` +
+  `<a:bgFillStyleLst>` +
+  `<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>` +
+  `<a:gradFill rotWithShape="1"><a:gsLst>` +
+  `<a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="40000"/><a:satMod val="350000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="40000"><a:schemeClr val="phClr"><a:tint val="45000"/><a:shade val="99000"/><a:satMod val="350000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="20000"/><a:satMod val="255000"/></a:schemeClr></a:gs>` +
+  `</a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="-80000" r="50000" b="180000"/></a:path></a:gradFill>` +
+  `<a:gradFill rotWithShape="1"><a:gsLst>` +
+  `<a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="80000"/><a:satMod val="300000"/></a:schemeClr></a:gs>` +
+  `<a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="30000"/><a:satMod val="200000"/></a:schemeClr></a:gs>` +
+  `</a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path></a:gradFill>` +
+  `</a:bgFillStyleLst>` +
+  `</a:fmtScheme>` +
+  `</a:themeElements>` +
+  `<a:objectDefaults/>` +
+  `<a:extraClrSchemeLst/>` +
+  `</a:theme>`;
 
 const slideLayout = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1">` +
@@ -511,17 +635,24 @@ const tableStyles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n
 // （这三个部件通过关系类型与 presentation 关联，XML 内部无需额外引用）
 const presentationRels2 = presentationRels.replace(
   '</Relationships>',
-  `<Relationship Id="rIdProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>` +
-  `<Relationship Id="rIdView" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>` +
-  `<Relationship Id="rIdTbl" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>` +
+  (F.exProps
+    ? `<Relationship Id="rIdProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>` +
+      `<Relationship Id="rIdView" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>` +
+      `<Relationship Id="rIdTbl" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>`
+    : '') +
   `</Relationships>`
 );
 
 const contentTypes2 = contentTypes.replace(
   `<Override PartName="/docProps/core.xml"`,
-  `<Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>` +
-  `<Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>` +
-  `<Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>` +
+  (F.exProps
+    ? `<Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>` +
+      `<Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>` +
+      `<Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>`
+    : '') +
+  (F.theme
+    ? `<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`
+    : '') +
   `<Override PartName="/docProps/core.xml"`
 );
 
@@ -572,11 +703,14 @@ const files = [
   { name: 'docProps/app.xml', data: app },
   { name: 'ppt/presentation.xml', data: presentation },
   { name: 'ppt/_rels/presentation.xml.rels', data: presentationRels2 },
-  { name: 'ppt/presProps.xml', data: presProps },
-  { name: 'ppt/viewProps.xml', data: viewProps },
-  { name: 'ppt/tableStyles.xml', data: tableStyles },
   { name: 'ppt/slideMasters/slideMaster1.xml', data: slideMaster },
   { name: 'ppt/slideMasters/_rels/slideMaster1.xml.rels', data: slideMasterRels },
+  ...(F.theme ? [{ name: 'ppt/theme/theme1.xml', data: theme }] : []),
+  ...(F.exProps ? [
+    { name: 'ppt/presProps.xml', data: presProps },
+    { name: 'ppt/viewProps.xml', data: viewProps },
+    { name: 'ppt/tableStyles.xml', data: tableStyles }
+  ] : []),
   { name: 'ppt/slideLayouts/slideLayout1.xml', data: slideLayout },
   { name: 'ppt/slideLayouts/_rels/slideLayout1.xml.rels', data: slideLayoutRels }
 ];
