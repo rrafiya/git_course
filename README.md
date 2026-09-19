@@ -68,6 +68,21 @@ README.md       # 本说明
 .gitignore      # 忽略规则
 ```
 
+## 布局规则（改动前请先读）
+
+画布尺寸由 `resize()` 统一计算，几条硬性约束不要破坏：
+
+1. **画布尺寸绝不超过可见区域** —— 缩放结果会再做一次硬夹紧（`host.w` / `host.h` / `maxW` / `maxH`）。
+2. **不得出现"提前 return 而不缩小画布"的分支** —— `<canvas>` 的 HTML 初始尺寸是
+   540×960，一旦某次 resize 直接被 return，画布就会停留在全尺寸并溢出小窗口。
+   这是历史上真实出现过的缺陷。
+3. **垂直位置要避开底部提示条** —— 底部 `#hint`（约 18px 高 + 6px 边距）占据窗口
+   底部，`resize()` 会按它的实测高度预留空间，并把画布居中到剩余区域内。
+   CSS 用 `translateX(-50%)` 只做水平居中，`top` 由 JS 设置；若改回
+   `translate(-50%,-50%)` 会导致垂直定位偏差半个画布高度。
+4. **每 700ms 的自愈检查**（`selfCheck`）会在检测到画布越界时自动重新计算，
+   这是最后一道保险。
+
 ## 画面异常排查
 
 如果遇到「内容显示不全」「自机或敌人跑到窗口外看不到」这类问题，
@@ -80,9 +95,27 @@ README.md       # 本说明
 
 把复制出来的报告贴出来即可定位问题。
 
-> 画布尺寸本身也具备**自愈能力**：`index.html` 每 700ms 会核对画布实际显示
-> 尺寸是否仍在可见区域内，一旦发现异常立即重新计算，因此即使某次布局计算
-> 出现偏差也会被自动纠正。
+## 在本机用真实 Chrome 验证渲染
+
+本项目不改用任何测试框架，但可以用无头 Chrome + CDP 做真实的端到端验证
+（真实布局测量 + 截图）。**注意本机环境限制**：
+
+> 沙箱默认禁止创建**命名管道**，而 Chrome 的 Mojo IPC 依赖它，直接启动会失败：
+> `FATAL:mojo/public/cpp/platform/platform_channel.cc: Check failed: 拒绝访问 (0x5)`。
+> 解决方式是放宽该命令的沙箱权限（full access）后再启动 Chrome。
+
+另外 **不要用 Node 的 `child_process.spawn` 去启动浏览器**（管道 stdio 在该环境下
+会抛 `EPERM`）；应改用 PowerShell 的 `Start-Process` 启动，再用 Node 通过
+WebSocket 连 CDP。
+
+```powershell
+# 1) 启动无头 Chrome（需要放宽沙箱权限）
+Start-Process "C:\Program Files\Google\Chrome\Application\chrome.exe" -ArgumentList @(
+  "--headless=new","--remote-debugging-port=9501","--user-data-dir=<临时目录>",
+  "--no-first-run","--no-default-browser-check","--no-sandbox","--disable-gpu","about:blank"
+)
+# 2) 用 Node 连接 http://127.0.0.1:9501/json/new?<file-url> 并走 CDP 驱动
+```
 
 ## 许可
 

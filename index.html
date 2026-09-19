@@ -21,16 +21,18 @@
       radial-gradient(ellipse at 50% 110%, #1a0f2e 0%, transparent 60%),
       #05060f;
   }
-  /* 绝对定位 + translate(-50%,-50%)：确保画布始终精确居中且绝不被裁切 */
+  /* 绝对定位：left:50% + translateX(-50%) 水平精确居中；
+     垂直位置由 JS 设置 top（画布顶边坐标），从而能给底部提示条留出空间 */
   canvas {
-    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    position:absolute; left:50%; top:0; transform:translateX(-50%);
     display:block; touch-action:none; cursor:crosshair;
     border-radius:10px;
     box-shadow:0 0 0 1px #1e2a52, 0 0 34px rgba(70,140,255,.28), 0 18px 50px rgba(0,0,0,.75);
   }
   #hint {
     position:fixed; left:0; right:0; bottom:6px; text-align:center;
-    color:#4d5b85; font-size:12px; letter-spacing:.5px;
+    color:#5d6f9c; font-size:12px; line-height:18px; letter-spacing:.5px;
+    text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.7);
     pointer-events:none; user-select:none; white-space:nowrap;
   }
 </style>
@@ -127,9 +129,26 @@
 
   function resize() {
     var host = measureHost();
-    var padX = 16, padY = 32;      // 四周留白，避免贴边与遮挡底部提示
-    var availW = Math.max(40, host.w - padX);
-    var availH = Math.max(60, host.h - padY);
+
+    // 预留空间：
+    //  - 左右各 8px
+    //  - 顶部 14px
+    //  - 底部按底部提示条的**实际高度**预留 + 8px 间隙，
+    //    否则提示条会压在画布上（实测过会重叠）
+    var PAD_X = 8, PAD_TOP = 14, GAP_BOTTOM = 8;
+    var hintH = 0;
+    if (hint) {
+      var rect = hint.getBoundingClientRect();
+      hintH = rect.height > 0 ? rect.height : 18;
+      if (host.h < 560) {
+        hint.style.display = 'none';           // 极矮窗口下隐藏提示条
+        hintH = 0;
+      } else {
+        hint.style.display = '';
+      }
+    }
+    var availW = Math.max(40, host.w - PAD_X * 2);
+    var availH = Math.max(60, host.h - PAD_TOP - (hintH ? hintH + GAP_BOTTOM : 10));
 
     var scale = Math.min(availW / VW, availH / VH);
     if (!isFinite(scale) || scale <= 0) return;
@@ -151,9 +170,15 @@
       canvas.style.width = w + 'px';
       canvas.style.height = h + 'px';
     }
+    // 垂直位置：在「顶部边距」到「提示条上方」之间的区域里居中。
+    // 这里 top 就是画布顶边坐标（CSS 用 translateX 只做水平居中，不再上移半高）
+    var areaTop = PAD_TOP;
+    var areaBottom = host.h - (hintH ? hintH + GAP_BOTTOM : 10);
+    if (areaBottom - areaTop < h) areaTop = Math.max(0, areaBottom - h);
+    canvas.style.top = Math.round(areaTop + (areaBottom - areaTop - h) / 2) + 'px';
+
     var dpr = window.devicePixelRatio || 1;
     ctx.setTransform((w / VW) * dpr, 0, 0, (h / VH) * dpr, 0, 0);
-    if (hint) hint.style.display = host.h < 560 ? 'none' : '';
   }
 
   // ---------------------------------------------------------------- 输入
