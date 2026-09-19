@@ -636,9 +636,9 @@ const tableStyles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n
 const presentationRels2 = presentationRels.replace(
   '</Relationships>',
   (F.exProps
-    ? `<Relationship Id="rIdProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>` +
-      `<Relationship Id="rIdView" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>` +
-      `<Relationship Id="rIdTbl" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>`
+    ? `<Relationship Id="rId900" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>` +
+      `<Relationship Id="rId901" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>` +
+      `<Relationship Id="rId902" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>`
     : '') +
   `</Relationships>`
 );
