@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1400px; height:740px; overflow:hidden; background:#0b1020;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#dbe6ff; }
+  .t { text-align:center; padding-top:24px; }
+  .t h1 { font-size:32px; color:#9fe8ff; }
+  .t p { font-size:15px; color:#6c7a99; margin-top:8px; }
+  .stage { position:relative; height:560px; margin-top:10px; }
+  .repo { position:absolute; width:400px; border-radius:16px; padding:22px; top:60px; }
+  .local { left:70px; background:linear-gradient(160deg,#16304d,#112038); border:2px solid #2f6ea8; }
+  .remote { right:70px; background:linear-gradient(160deg,#3a1a2c,#22101c); border:2px solid #b04a76; }
+  .rt { font-size:23px; font-weight:700; margin-bottom:6px; }
+  .local .rt { color:#7fc4ff; } .remote .rt { color:#ff8fb4; }
+  .rs { font-size:13px; color:#7d8bab; margin-bottom:16px; font-family:Consolas,monospace; }
+  .commits { display:flex; flex-direction:column; gap:8px; }
+  .cm { background:#0a0f1c; border-radius:7px; padding:9px 12px; font-size:13.5px;
+    font-family:Consolas,monospace; display:flex; gap:10px; align-items:baseline; }
+  .h { color:#ffb86b; flex:0 0 auto; }
+  .m { color:#c4d4f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .head { color:#63f5a0; font-size:12px; }
+  .center { position:absolute; left:50%; top:60px; transform:translateX(-50%); width:420px;
+    display:flex; flex-direction:column; gap:64px; align-items:center; padding-top:40px; }
+  .ar { width:100%; display:flex; align-items:center; gap:14px; }
+  .ar .lbl { font-family:Consolas,monospace; font-size:15px; color:#9fe8ff; white-space:nowrap;
+    background:#121a2e; border:1px solid #2a3a5c; border-radius:6px; padding:4px 10px; }
+  .line { flex:1; height:3px; position:relative; }
+  .right { background:linear-gradient(90deg,#2f6ea8,#7fc4ff); }
+  .right:after { content:""; position:absolute; right:-1px; top:-7px;
+    border-left:14px solid #7fc4ff; border-top:9px solid transparent; border-bottom:9px solid transparent; }
+  .left { background:linear-gradient(90deg,#ff8fb4,#b04a76); }
+  .left:after { content:""; position:absolute; left:-1px; top:-7px;
+    border-right:14px solid #b04a76; border-top:9px solid transparent; border-bottom:9px solid transparent; }
+  .note { position:absolute; bottom:14px; left:0; right:0; text-align:center;
+    font-size:14px; color:#8ea2cc; }
+  .k { color:#ffd166; font-family:Consolas,monospace; }
+</style>
+</head>
+<body>
+  <div class="t">
+    <h1>本地仓库 ↔ 远程仓库：push 与 pull</h1>
+    <p>Git 是分布式的 —— 你本地有完整历史，GitHub 只是另一个副本</p>
+  </div>
+
+  <div class="stage">
+    <div class="repo local">
+      <div class="rt">本地仓库</div>
+      <div class="rs">C:\Users\Amadeus\Documents\git</div>
+      <div class="commits">
+        <div class="cm"><span class="h">7eca595</span><span class="m">feat: 改为全屏显示…</span><span class="head">HEAD</span></div>
+        <div class="cm"><span class="h">e1fdf90</span><span class="m">fix: 修复浏览器缩放…</span></div>
+        <div class="cm"><span class="h">34b478c</span><span class="m">fix: 不再依赖 measureText…</span></div>
+        <div class="cm"><span class="h">020148a</span><span class="m">fix: GAME OVER 文字被裁切</span></div>
+        <div class="cm"><span class="h">0d8f4b1</span><span class="m">fix: 底部提示条被截断</span></div>
+      </div>
+    </div>
+
+    <div class="center">
+      <div class="ar">
+        <span class="lbl">git push</span>
+        <div class="line right"></div>
+      </div>
+      <div class="ar">
+        <div class="line left"></div>
+        <span class="lbl">git pull</span>
+      </div>
+    </div>
+
+    <div class="repo remote">
+      <div class="rt">远程仓库（GitHub）</div>
+      <div class="rs">github.com/rrafiya/git_course</div>
+      <div class="commits">
+        <div class="cm"><span class="h">7eca595</span><span class="m">feat: 改为全屏显示…</span><span class="head">main</span></div>
+        <div class="cm"><span class="h">e1fdf90</span><span class="m">fix: 修复浏览器缩放…</span></div>
+        <div class="cm"><span class="h">34b478c</span><span class="m">fix: 不再依赖 measureText…</span></div>
+        <div class="cm"><span class="h">020148a</span><span class="m">fix: GAME OVER 文字被裁切</span></div>
+        <div class="cm"><span class="h">0d8f4b1</span><span class="m">fix: 底部提示条被截断</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="k">push</span>：把本地提交上传到远程　·　
+    <span class="k">pull</span>：把远程更新下载并合并到本地　·　
+    <span class="k">clone</span>：第一次把整个仓库复制到本地
+  </div>
+</body>
+</html>

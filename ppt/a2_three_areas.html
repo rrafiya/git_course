@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1400px; height:760px; overflow:hidden; background:#0b1020;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#dbe6ff; }
+  .t { text-align:center; padding-top:26px; }
+  .t h1 { font-size:34px; color:#9fe8ff; letter-spacing:1px; }
+  .t p { font-size:16px; color:#6c7a99; margin-top:8px; }
+  .row { display:flex; align-items:stretch; justify-content:center; gap:0; margin-top:44px; padding:0 40px; }
+  .box { width:290px; border-radius:14px; padding:20px 18px; position:relative; }
+  .b1 { background:linear-gradient(160deg,#16304d,#112038); border:2px solid #2f6ea8; }
+  .b2 { background:linear-gradient(160deg,#3d3417,#241f0f); border:2px solid #b08a2a; }
+  .b3 { background:linear-gradient(160deg,#173d2c,#102419); border:2px solid #2f9e6a; }
+  .b4 { background:linear-gradient(160deg,#3a1a2c,#22101c); border:2px solid #b04a76; }
+  .bt { font-size:21px; font-weight:700; margin-bottom:4px; }
+  .b1 .bt { color:#7fc4ff; } .b2 .bt { color:#ffd166; }
+  .b3 .bt { color:#63f5a0; } .b4 .bt { color:#ff8fb4; }
+  .bsub { font-size:12px; color:#7d8bab; margin-bottom:12px; letter-spacing:.5px; }
+  .box ul { list-style:none; font-size:14px; line-height:1.85; }
+  .box li:before { content:"· "; color:#5d6b88; }
+  .code { font-family:Consolas,monospace; font-size:13px; color:#bcd4ff;
+    background:#0a0f1c; border-radius:6px; padding:8px 10px; margin-top:12px; display:inline-block; }
+  .arrow { width:132px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .arrow .cmd { font-family:Consolas,monospace; font-size:14px; color:#9fe8ff;
+    background:#121a2e; border:1px solid #2a3a5c; border-radius:6px; padding:5px 10px; margin-bottom:8px; white-space:nowrap; }
+  .arrow .line { width:100%; height:3px; background:linear-gradient(90deg,#2a3a5c,#7fc4ff,#2a3a5c); position:relative; }
+  .arrow .line:after { content:""; position:absolute; right:-1px; top:-6px;
+    border-left:12px solid #7fc4ff; border-top:8px solid transparent; border-bottom:8px solid transparent; }
+  .foot { display:flex; justify-content:center; gap:56px; margin-top:40px; font-size:14px; color:#8ea2cc; }
+  .k { color:#ffd166; font-family:Consolas,monospace; }
+</style>
+</head>
+<body>
+  <div class="t">
+    <h1>Git 的三个区域 —— 文件是如何一步步被记录的</h1>
+    <p>理解这张图，就理解了 Git 的核心</p>
+  </div>
+
+  <div class="row">
+    <div class="box b1">
+      <div class="bt">① 工作区</div>
+      <div class="bsub">Working Directory</div>
+      <ul>
+        <li>你能直接编辑的文件</li>
+        <li>index.html、README.md …</li>
+        <li>改动后 Git 会标记为「已修改」</li>
+      </ul>
+    </div>
+
+    <div class="arrow">
+      <div class="cmd">git add</div>
+      <div class="line"></div>
+    </div>
+
+    <div class="box b2">
+      <div class="bt">② 暂存区</div>
+      <div class="bsub">Staging Area / index</div>
+      <ul>
+        <li>「这次要提交什么」的清单</li>
+        <li>可以只挑部分文件提交</li>
+        <li>提交前还能反悔（git restore）</li>
+      </ul>
+    </div>
+
+    <div class="arrow">
+      <div class="cmd">git commit</div>
+      <div class="line"></div>
+    </div>
+
+    <div class="box b3">
+      <div class="bt">③ 本地仓库</div>
+      <div class="bsub">Local Repository (.git)</div>
+      <ul>
+        <li>每次提交生成一个版本快照</li>
+        <li>每个提交有唯一 hash</li>
+        <li>可随时回退到任意版本</li>
+      </ul>
+    </div>
+
+    <div class="arrow">
+      <div class="cmd">git push</div>
+      <div class="line"></div>
+    </div>
+
+    <div class="box b4">
+      <div class="bt">④ 远程仓库</div>
+      <div class="bsub">Remote (GitHub)</div>
+      <ul>
+        <li>代码托管在云端</li>
+        <li>团队协作、备份、分享</li>
+        <li>可部署上线（GitHub Pages）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div><span class="k">git add</span> = 挑要提交的改动</div>
+    <div><span class="k">git commit</span> = 拍一张快照存到本地</div>
+    <div><span class="k">git push</span> = 把本地快照同步到云端</div>
+  </div>
+</body>
+</html>

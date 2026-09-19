@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1400px; height:940px; overflow:hidden; background:#0b1020;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#dbe6ff; }
+  .t { text-align:center; padding-top:20px; }
+  .t h1 { font-size:30px; color:#9fe8ff; }
+  .t p { font-size:14px; color:#6c7a99; margin-top:6px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:22px 40px 0; }
+  .card { background:#111a2c; border:1px solid #23304a; border-radius:11px; padding:14px 16px; }
+  .card h3 { font-size:15.5px; color:#ffd166; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .ex { font-family:Consolas,monospace; font-size:13px; color:#9fe8ff; background:#0a0f1c;
+    border-radius:5px; padding:5px 9px; margin-bottom:7px; display:block; }
+  .ex b { color:#ffb86b; font-weight:400; }
+  .desc { font-size:12.5px; color:#8ea2cc; line-height:1.6; }
+  .tagline { display:inline-block; font-size:11px; padding:1px 7px; border-radius:4px;
+    background:#1b2740; color:#7d8bab; margin-left:6px; }
+</style>
+</head>
+<body>
+  <div class="t">
+    <h1>Git 常用命令速查表</h1>
+    <p>本案例实际用到的命令都已标出 ✓</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>① 创建与获取仓库 <span class="tagline">起步</span></h3>
+      <code class="ex">git init <b># 把当前文件夹变成 Git 仓库 ✓</b></code>
+      <code class="ex">git clone &lt;url&gt; <b># 把远程仓库复制到本地</b></code>
+      <div class="desc"><b style="color:#63f5a0">✓</b> 本案例第一步就是在空文件夹执行 <b>git init</b>，
+        从此这个文件夹的每次改动都能被追踪。</div>
+    </div>
+
+    <div class="card">
+      <h3>② 查看状态与历史 <span class="tagline">最常用</span></h3>
+      <code class="ex">git status <b># 哪些文件改了？✓</b></code>
+      <code class="ex">git diff <b># 具体改了什么内容</b></code>
+      <code class="ex">git log --oneline --graph <b># 提交历史 ✓</b></code>
+      <div class="desc"><b style="color:#63f5a0">✓</b> 每次动手前先 <b>git status</b>，
+        是避免误提交最有效的习惯。</div>
+    </div>
+
+    <div class="card">
+      <h3>③ 提交改动 <span class="tagline">核心</span></h3>
+      <code class="ex">git add &lt;文件&gt; <b># 加入暂存区 ✓</b></code>
+      <code class="ex">git add -A <b># 所有改动一起加 ✓</b></code>
+      <code class="ex">git commit -m "说明" <b># 提交 ✓</b></code>
+      <code class="ex">git commit -F 文件 <b># 从文件读多行说明</b></code>
+      <div class="desc">提交说明建议用前缀区分类型：<b>feat</b> 新功能 / <b>fix</b> 修 bug /
+        <b>docs</b> 文档 / <b>chore</b> 杂项。本案例 11 次提交全部遵循这个约定。</div>
+    </div>
+
+    <div class="card">
+      <h3>④ 与 GitHub 同步 <span class="tagline">协作</span></h3>
+      <code class="ex">git remote add origin &lt;url&gt; <b># 关联远程 ✓</b></code>
+      <code class="ex">git push -u origin main <b># 首次推送 ✓</b></code>
+      <code class="ex">git push <b># 之后的推送 ✓</b></code>
+      <code class="ex">git pull <b># 拉取远程更新</b></code>
+      <div class="desc"><b style="color:#63f5a0">✓</b> 首次推送加 <b>-u</b> 建立跟踪关系，
+        之后直接 <b>git push</b> 即可。</div>
+    </div>
+
+    <div class="card">
+      <h3>⑤ 撤销与回退 <span class="tagline">救命</span></h3>
+      <code class="ex">git restore &lt;文件&gt; <b># 丢弃未暂存的修改</b></code>
+      <code class="ex">git restore --staged &lt;文件&gt; <b># 移出暂存区</b></code>
+      <code class="ex">git revert &lt;hash&gt; <b># 安全地反向提交</b></code>
+      <code class="ex">git reset --soft HEAD~1 <b># 撤销上次提交但保留改动</b></code>
+      <div class="desc">已推送的提交不要用 <b>reset</b> 改写历史，用 <b>revert</b> 更安全。</div>
+    </div>
+
+    <div class="card">
+      <h3>⑥ 分支 <span class="tagline">并行开发</span></h3>
+      <code class="ex">git switch -c 新分支 <b># 建并切换分支</b></code>
+      <code class="ex">git switch main <b># 切回主分支</b></code>
+      <code class="ex">git merge 分支名 <b># 合并到当前分支</b></code>
+      <code class="ex">git branch -vv <b># 查看分支与跟踪关系 ✓</b></code>
+      <div class="desc">本案例只有一个 <b>main</b> 分支；多人协作时通常每个功能开一条分支，
+        通过 Pull Request 合并。</div>
+    </div>
+
+    <div class="card">
+      <h3>⑦ 排查与对比 <span class="tagline">定位问题</span></h3>
+      <code class="ex">git ls-remote origin <b># 远程有哪些分支 ✓</b></code>
+      <code class="ex">git show HEAD:文件 &gt; 旧版本 <b># 取某次提交的文件 ✓</b></code>
+      <code class="ex">git diff HEAD~1 HEAD <b># 对比两次提交</b></code>
+      <code class="ex">git rev-parse HEAD <b># 查看当前提交 hash ✓</b></code>
+      <div class="desc"><b style="color:#63f5a0">✓</b> 本案例排查显示 bug 时，就用
+        <b>git show HEAD:index.html</b> 取出旧版本，与新版对比验证修复效果。</div>
+    </div>
+
+    <div class="card">
+      <h3>⑧ 配置 <span class="tagline">一次性</span></h3>
+      <code class="ex">git config --global user.name "名字" <b># ✓</b></code>
+      <code class="ex">git config --global user.email "邮箱" <b># ✓</b></code>
+      <code class="ex">git config --global --list <b># 查看全部配置 ✓</b></code>
+      <div class="desc">不配置姓名邮箱，<b>git commit</b> 会直接报错。本案例一开始就是空配置，
+        提交时才补上。</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1400px; height:900px; overflow:hidden; background:#0b1020;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#dbe6ff; }
+  .t { text-align:center; padding-top:22px; }
+  .t h1 { font-size:32px; color:#9fe8ff; }
+  .t p { font-size:15px; color:#6c7a99; margin-top:7px; }
+  .tl { position:relative; margin:34px 0 0 60px; }
+  .tl:before { content:""; position:absolute; left:14px; top:6px; bottom:40px; width:3px;
+    background:linear-gradient(180deg,#7fc4ff,#63f5a0,#ffd166); opacity:.55; }
+  .it { display:flex; gap:22px; padding:9px 0; position:relative; }
+  .dot { width:31px; height:31px; border-radius:50%; flex:0 0 31px;
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+    border:3px solid #0b1020; margin-top:2px; z-index:1; }
+  .d1 { background:#2f6ea8; } .d2 { background:#2f9e6a; } .d3 { background:#b08a2a; }
+  .d4 { background:#b04a76; } .d5 { background:#6b4bb0; }
+  .c { flex:1; }
+  .cm { font-size:16.5px; color:#e8f0ff; font-weight:600; }
+  .cm .tag { font-family:Consolas,monospace; font-size:12px; padding:2px 7px; border-radius:4px;
+    margin-right:9px; font-weight:700; vertical-align:1px; }
+  .tg-f { background:#12351f; color:#63f5a0; }
+  .tg-x { background:#3a1d12; color:#ff9d6b; }
+  .tg-c { background:#20283c; color:#9db4de; }
+  .meta { font-size:12.5px; color:#6c7a99; font-family:Consolas,monospace; margin-top:3px; }
+  .meta .hm { color:#ffb86b; }
+  .st { display:flex; align-items:center; font-size:12.5px; color:#8ea2cc;
+    padding-right:70px; white-space:nowrap; }
+  .right { text-align:right; }
+  .big { font-size:19px; color:#9fe8ff; font-weight:700; }
+</style>
+</head>
+<body>
+  <div class="t">
+    <h1>本案例的真实提交历史 —— 11 次提交</h1>
+    <p>从一个空文件夹，到完整的小游戏 + 诊断工具 + 完整文档</p>
+  </div>
+
+  <div style="display:flex; margin:30px 60px 0 60px; gap:40px;">
+    <div class="tl" style="flex:1; margin-left:0;">
+
+      <div class="it"><div class="dot d1">1</div><div class="c">
+        <div class="cm"><span class="tag tg-c">chore</span>初始化仓库 + 首次提交</div>
+        <div class="meta"><span class="hm">1902551</span> · 16:21 · .gitignore + README.md</div></div>
+        <div class="st right">空文件夹</div></div>
+
+      <div class="it"><div class="dot d2">2</div><div class="c">
+        <div class="cm"><span class="tag tg-f">feat</span>添加雷霆战机小游戏</div>
+        <div class="meta"><span class="hm">21ccbf8</span> · 16:39 · +1122 行 · 单文件 HTML5 Canvas 游戏</div></div>
+        <div class="st right">功能开发</div></div>
+
+      <div class="it"><div class="dot d3">3</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>修复飞船自动漂移与画面被裁切</div>
+        <div class="meta"><span class="hm">34f6dc4</span> · 16:47 · 改为相对拖动；加固画布尺寸</div></div>
+        <div class="st right">第 1 轮修复</div></div>
+
+      <div class="it"><div class="dot d3">4</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>加固画布尺寸控制，确保内容永不超出可见区域</div>
+        <div class="meta"><span class="hm">59166c6</span> · 16:54 · +440 行 · 新增 diagnose.html 诊断工具</div></div>
+        <div class="st right">加可观测性</div></div>
+
+      <div class="it"><div class="dot d3">5</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>修正画布垂直定位，消除底部提示条被压住</div>
+        <div class="meta"><span class="hm">a762ba0</span> · 17:03 · 真实 Chrome 实测发现</div></div>
+        <div class="st right">第 2 轮修复</div></div>
+
+      <div class="it"><div class="dot d3">6</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>修复 diagnose.html 在 file:// 下无法工作</div>
+        <div class="meta"><span class="hm">6b68c07</span> · 17:11 · +364 行 · 改用同文档注入替代 iframe</div></div>
+        <div class="st right">第 3 轮修复</div></div>
+
+      <div class="it"><div class="dot d4">7</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>底部提示条在窄屏下不再被截断</div>
+        <div class="meta"><span class="hm">0d8f4b1</span> · 17:19 · 去掉 nowrap，改为按项换行</div></div>
+        <div class="st right">第 4 轮修复</div></div>
+
+      <div class="it"><div class="dot d4">8</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>GAME OVER 等居中文字在部分字体环境下被裁切</div>
+        <div class="meta"><span class="hm">020148a</span> · 17:28 · 新增自适应字号</div></div>
+        <div class="st right">第 5 轮修复</div></div>
+
+      <div class="it"><div class="dot d4">9</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>不再依赖 measureText，逐字绘制保证不被裁切</div>
+        <div class="meta"><span class="hm">34b478c</span> · 17:36 · +143 行 · 换掉整个排版思路</div></div>
+        <div class="st right">第 6 轮修复</div></div>
+
+      <div class="it"><div class="dot d5">10</div><div class="c">
+        <div class="cm"><span class="tag tg-x">fix</span>修复浏览器缩放导致画布溢出窗口</div>
+        <div class="meta"><span class="hm">e1fdf90</span> · 17:54 · 新增硬夹紧 + 自愈</div></div>
+        <div class="st right">第 7 轮修复</div></div>
+
+      <div class="it"><div class="dot d2">11</div><div class="c">
+        <div class="cm"><span class="tag tg-f">feat</span>改为全屏显示；新增 F 键原生全屏</div>
+        <div class="meta"><span class="hm">7eca595</span> · 18:05 · 当前 HEAD，已推送到 origin/main</div></div>
+        <div class="st right"><span class="big">HEAD</span></div></div>
+
+    </div>
+  </div>
+</body>
+</html>

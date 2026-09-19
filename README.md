@@ -68,8 +68,33 @@ python -m http.server 8000
 ```
 index.html      # 游戏本体（结构 + 样式 + 逻辑，全部在这一个文件里）
 diagnose.html   # 显示问题排查工具（遇到画面异常时打开它）
+ppt/            # 《Git 与 GitHub 从入门到实战》教学 PPT（含制作脚本与素材）
 README.md       # 本说明
 .gitignore      # 忽略规则
+```
+
+## Git / GitHub 教学 PPT
+
+以本仓库的开发全过程为案例，做了一份 22 页的教学演示：
+
+| 文件 | 说明 |
+|---|---|
+| `ppt/Git与GitHub从入门到实战.pptx` | 正式 PPT，16:9，用 PowerPoint 打开 |
+| `ppt/预览.html` | 浏览器预览版，**双击即可看**（无需 PowerPoint） |
+| `ppt/制作指南.md` | 完整的制作方法说明：怎么画图、怎么生成 pptx、怎么校验 |
+| `ppt/deck.json` | PPT 全部文字内容（改这个文件即可改 PPT） |
+| `ppt/img/` | 12 张素材（8 张示意图 + 4 张真实截图） |
+| `ppt/build_pptx.mjs` | 生成 pptx 的脚本（纯 Node，零依赖） |
+| `ppt/preview.mjs` | 生成 HTML 预览页 |
+| `ppt/validate.mjs` | pptx 结构校验脚本 |
+| `ppt/shot.mjs`、`shot_real.mjs` | 把 HTML 渲染成 PNG、采集真实截图 |
+
+想改内容：编辑 `ppt/deck.json`，然后
+
+```bash
+node ppt/build_pptx.mjs   # 重新生成 pptx
+node ppt/preview.mjs      # 重新生成预览页
+node ppt/validate.mjs "ppt/Git与GitHub从入门到实战.pptx"   # 校验结构
 ```
 
 ## 布局规则（改动前请先读）

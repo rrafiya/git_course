@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1400px; height:760px; overflow:hidden; background:#0b1020;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#dbe6ff; }
+  .t { text-align:center; padding-top:26px; }
+  .t h1 { font-size:33px; color:#9fe8ff; }
+  .t p { font-size:15px; color:#6c7a99; margin-top:8px; }
+  .w { display:flex; gap:26px; padding:34px 54px 0; }
+  .col { flex:1; border-radius:15px; padding:22px 24px; min-height:470px; }
+  .l { background:linear-gradient(165deg,#152a45,#101b2c); border:2px solid #2f6ea8; }
+  .r { background:linear-gradient(165deg,#34182a,#1e0f18); border:2px solid #b04a76; }
+  .hd { font-size:25px; font-weight:700; margin-bottom:4px; }
+  .l .hd { color:#7fc4ff; } .r .hd { color:#ff8fb4; }
+  .sub { font-size:13px; color:#7d8bab; margin-bottom:18px; font-family:Consolas,monospace; }
+  .col ul { list-style:none; }
+  .col li { font-size:14.5px; line-height:1.55; padding:9px 0 9px 26px; position:relative;
+    border-bottom:1px solid #1e2a40; color:#c4d4f0; }
+  .col li:last-child { border-bottom:0; }
+  .col li:before { position:absolute; left:0; top:9px; }
+  .l li:before { content:"◆"; color:#4f8fd0; font-size:11px; }
+  .r li:before { content:"◆"; color:#c76a92; font-size:11px; }
+  li b { color:#ffd166; }
+  .mid { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    width:120px; }
+  .vs { font-size:26px; font-weight:700; color:#5d6b88; }
+  .rel { font-size:12px; color:#6c7a99; text-align:center; line-height:1.6; }
+  .note { margin:26px 54px 0; background:#101a2e; border-left:4px solid #63f5a0;
+    border-radius:8px; padding:15px 20px; font-size:14.5px; color:#a8bcdd; line-height:1.8; }
+  .note b { color:#63f5a0; }
+  .note code { font-family:Consolas,monospace; color:#9fe8ff; background:#0a0f1c; padding:1px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+  <div class="t">
+    <h1>Git 与 GitHub 不是一回事</h1>
+    <p>这是初学者最容易混淆的一点</p>
+  </div>
+
+  <div class="w">
+    <div class="col l">
+      <div class="hd">Git</div>
+      <div class="sub">版本控制工具 · 装在你电脑上</div>
+      <ul>
+        <li>运行在<b>本地</b>的命令行程序</li>
+        <li>负责<b>记录每一次改动</b>，生成版本快照</li>
+        <li>每个提交有唯一 hash，可随时<b>回退</b></li>
+        <li>支持<b>分支</b>，可以并行开发互不干扰</li>
+        <li><b>完全离线</b>也能用，不需要网络</li>
+        <li>由 Linus Torvalds 于 2005 年为 Linux 内核开发</li>
+    </ul>
+    </div>
+
+    <div class="mid">
+      <div class="vs">≠</div>
+      <div class="rel">两者<br>常一起用<br>但完全独立</div>
+    </div>
+
+    <div class="col r">
+      <div class="hd">GitHub</div>
+      <div class="sub">代码托管网站 · 跑在云端</div>
+      <ul>
+        <li>一个<b>网站服务</b>，需要用浏览器访问</li>
+        <li>为 Git 仓库提供<b>云端存储</b>与备份</li>
+        <li>协作功能：<b>Pull Request</b>、Issue、代码审查</li>
+        <li><b>GitHub Pages</b> 可直接把网页部署上线</li>
+        <li>可视化查看提交历史、diff、贡献图</li>
+        <li>同类产品还有 GitLab、Gitee、Bitbucket</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>一句话记住</b>：<b>Git 是工具，GitHub 是网站。</b>
+    你可以只用 Git 不用 GitHub（版本照样记录），
+    也可以把 Git 仓库传到 GitLab 而不是 GitHub。<br>
+    本案例里 <code>git init</code> / <code>git add</code> / <code>git commit</code> 用的是 <b>Git</b>；
+    而 <code>git push</code> 的目标、以及你在浏览器里看到的仓库页面，是 <b>GitHub</b>。
+  </div>
+</body>
+</html>

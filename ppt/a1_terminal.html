@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>terminal</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1180px; height:660px; overflow:hidden;
+    background:#0c1018; font-family:Consolas,"Cascadia Mono",monospace; }
+  .win { width:100%; height:100%; background:#12161f; display:flex; flex-direction:column; }
+  .bar { height:40px; background:#1b2130; display:flex; align-items:center; padding:0 16px; gap:8px;
+    border-bottom:1px solid #2a3348; flex:0 0 auto; }
+  .dot { width:12px; height:12px; border-radius:50%; }
+  .r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}
+  .title { color:#7c8aa8; font-size:14px; margin-left:14px; }
+  .body { flex:1; padding:18px 22px; color:#d6e2f5; font-size:15px; line-height:1.62; }
+  .p { color:#5ce6a0; }
+  .c { color:#9fe8ff; }
+  .d { color:#6c7a99; }
+  .y2 { color:#ffd166; }
+  .o { color:#ff9d6b; }
+  .w { color:#e8f0ff; }
+  .cmt { color:#5d6b88; font-style:italic; }
+  .hash { color:#ffb86b; }
+  .blank { height:9px; }
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="bar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="title">MINGW64:/c/Users/Amadeus/Documents/git — git bash</span>
+  </div>
+  <div class="body">
+    <div><span class="p">$</span> <span class="c">git status</span></div>
+    <div class="w">On branch main</div>
+    <div class="w">Your branch is up to date with <span class="o">'origin/main'</span>.</div>
+    <div class="blank"></div>
+    <div class="w">nothing to commit, working tree clean</div>
+    <div class="blank"></div>
+    <div><span class="p">$</span> <span class="c">git log --oneline --graph --decorate -6</span></div>
+    <div><span class="y2">*</span> <span class="hash">7eca595</span> <span class="o">(HEAD -&gt; main, origin/main)</span> <span class="w">feat: 改为全屏显示；新增 F 键原生全屏</span></div>
+    <div><span class="y2">*</span> <span class="hash">e1fdf90</span> <span class="w">fix: 修复浏览器缩放导致画布溢出窗口；文字加硬夹紧</span></div>
+    <div><span class="y2">*</span> <span class="hash">34b478c</span> <span class="w">fix: 不再依赖 measureText，逐字绘制保证文字绝不被裁切</span></div>
+    <div><span class="y2">*</span> <span class="hash">020148a</span> <span class="w">fix: GAME OVER 等居中文字在部分字体环境下被裁切</span></div>
+    <div><span class="y2">*</span> <span class="hash">0d8f4b1</span> <span class="w">fix: 底部提示条在窄屏下不再被截断</span></div>
+    <div><span class="y2">*</span> <span class="hash">6b68c07</span> <span class="w">fix: 修复 diagnose.html 在 file:// 下无法工作的问题</span></div>
+    <div class="blank"></div>
+    <div><span class="p">$</span> <span class="c">git log -1 --stat</span></div>
+    <div><span class="hash">7eca595</span> <span class="w">feat: 改为全屏显示；新增 F 键原生全屏</span></div>
+    <div class="d">Author: rrafiya &lt;rrafiya503@gmail.com&gt;</div>
+    <div class="d">Date:   2026-09-19 18:05</div>
+    <div class="blank"></div>
+    <div> <span class="o">README.md</span>     |  24 <span class="p">+++++++</span><span class="o">---</span></div>
+    <div> <span class="o">diagnose.html</span> |  12 <span class="p">++</span><span class="o">--</span></div>
+    <div> <span class="o">index.html</span>    | 149 <span class="p">++++++++++++++</span><span class="o">-------------</span></div>
+    <div class="d"> 3 files changed, 103 insertions(+), 82 deletions(-)</div>
+  </div>
+</div>
+</body>
+</html>

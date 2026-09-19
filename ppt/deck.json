@@ -1,0 +1,264 @@
+{
+  "meta": {
+    "title": "Git 与 GitHub 从入门到实战",
+    "subtitle": "以「雷霆战机」小游戏项目为完整案例",
+    "repo": "https://github.com/rrafiya/git_course",
+    "out": "Git与GitHub从入门到实战.pptx"
+  },
+  "slides": [
+    {
+      "layout": "cover",
+      "title": "Git 与 GitHub 从入门到实战",
+      "subtitle": "以「雷霆战机」小游戏项目为完整案例",
+      "lines": [
+        "N|从空文件夹 → 11 次提交 → 完整上线的全过程",
+        "N|包含真实截图、命令输出与踩坑记录",
+        "N|仓库地址：github.com/rrafiya/git_course"
+      ]
+    },
+    {
+      "layout": "toc",
+      "title": "目录",
+      "lines": [
+        "B|一、先分清 Git 和 GitHub",
+        "B|二、核心概念：三个区域与 push / pull",
+        "B|三、日常开发五步循环",
+        "B|四、完整实战：从空文件夹到上线",
+        "B|五、进阶用法：提交规范、排查、分支",
+        "B|六、GitHub 能做什么",
+        "B|七、避坑指南与速查表"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "先看本次案例是什么",
+      "image": "10_game_playing.png",
+      "lines": [
+        "H|一个用原生 HTML5 Canvas 写的竖版飞行射击小游戏",
+        "B|单文件、零依赖，双击 index.html 就能玩",
+        "B|配套一个 diagnose.html 用于排查显示问题",
+        "B|整个开发过程**每一步都做了版本控制**",
+        "B|从空文件夹开始，共 11 次提交，全部推送到 GitHub",
+        "Q|本 PPT 的所有截图与命令输出，都来自这个真实仓库。"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "Git 与 GitHub 不是一回事",
+      "image": "08_git_vs_github.png",
+      "lines": [
+        "H|这是初学者最容易混淆的一点",
+        "B|**Git** = 版本控制**工具**，装在你电脑上，负责记录改动",
+        "B|**GitHub** = 代码托管**网站**，跑在云端，负责存储与协作",
+        "B|你完全可以只用 Git 不用 GitHub —— 版本照样记录",
+        "B|也可以把仓库托管到 GitLab、Gitee 等其它平台",
+        "Q|一句话：Git 是工具，GitHub 是网站。"
+      ]
+    },
+    {
+      "layout": "image",
+      "title": "核心概念①：Git 的三个区域",
+      "image": "02_three_areas.png",
+      "caption": "文件从「改好」到「被记录」要经过三个区域"
+    },
+    {
+      "layout": "image",
+      "title": "核心概念②：本地仓库 ↔ 远程仓库",
+      "image": "03_push_pull.png",
+      "caption": "Git 是分布式的：本地有完整历史，GitHub 只是另一个副本"
+    },
+    {
+      "layout": "image",
+      "title": "核心概念③：日常开发的完整循环",
+      "image": "05_workflow.png",
+      "caption": "改代码 → 看状态 → 加暂存 → 提交 → 推送"
+    },
+    {
+      "layout": "image",
+      "title": "Git 常用命令速查表",
+      "image": "07_cheatsheet.png",
+      "caption": "标 ✓ 的命令都是本案例实际用到的"
+    },
+    {
+      "layout": "content",
+      "title": "实战·第 0 步：初始化与关联远程",
+      "lines": [
+        "H|在一个空文件夹里开始",
+        "C|cd C:\\Users\\Amadeus\\Documents\\git",
+        "C|git init -b main",
+        "C|git config --global user.name  \"你的名字\"",
+        "C|git config --global user.email \"你的邮箱\"",
+        "B|`git init` 会在当前目录创建隐藏的 `.git` 文件夹 —— 它就是版本库本体",
+        "B|**不配置姓名邮箱，`git commit` 会直接报错**（本案例一开始就是空配置，提交时才补上）",
+        "B|`-b main` 指定主分支名为 main（GitHub 的默认约定）"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "实战·第 1 步：首次提交并推送到 GitHub",
+      "lines": [
+        "H|先 commit（存到本地），再 push（传到云端）",
+        "C|git add -A                       # 把所有改动加入暂存区",
+        "C|git commit -m \"chore: initial commit\"",
+        "C|git remote add origin https://github.com/用户名/仓库名.git",
+        "C|git push -u origin main          # 首次推送，-u 建立跟踪关系",
+        "B|两次推送之后就只需 `git push`，Git 已记住推到哪里",
+        "B|**重要**：`commit` 之后 GitHub 上还看不到，必须 `push` 才同步",
+        "Q|本案例第 1 次提交 1902551：只包含 .gitignore 和 README.md 两个文件。"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "实战·日常循环：改完就提交",
+      "image": "01_terminal.png",
+      "lines": [
+        "H|每次修改都遵循同一套动作",
+        "C|git status          # 改了哪些文件",
+        "C|git add -A          # 加入暂存区",
+        "C|git commit -m \"...\" # 提交",
+        "C|git push            # 推送到 GitHub",
+        "B|**动手前先 `git status`** 是最有效的防误提交习惯"
+      ]
+    },
+    {
+      "layout": "image",
+      "title": "实战·本案例的 11 次提交",
+      "image": "04_timeline.png",
+      "caption": "每次修改都是独立一次提交，历史清晰可追溯"
+    },
+    {
+      "layout": "content",
+      "title": "实战·一个完整的 bug 修复闭环",
+      "image": "12_diagnose.png",
+      "lines": [
+        "H|以「GAME OVER 文字被裁切」为例",
+        "B|**① 用户反馈 + 提供截图** —— 现象：文字右侧被切掉",
+        "B|**② 复现** —— 在真实 Chrome 中复现，测量像素范围",
+        "B|**③ 定位根因** —— 依赖 measureText 的测量结果不可靠",
+        "B|**④ 修复 + 写测试** —— 换成逐字定位，并验证各尺寸",
+        "B|**⑤ 提交并推送** —— 提交信息写清根因、方案、验证数据",
+        "Q|诊断工具输出「✅ 未检测到显示问题」，修复得到验证。"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "写好提交信息：小投入大回报",
+      "lines": [
+        "H|对比一下两种提交信息",
+        "Q|✗ 差的写法：update   /   修好了   /   asdf",
+        "Q|✓ 好的写法：fix: 修复浏览器缩放导致画布溢出窗口；文字加硬夹紧",
+        "B|**为什么值得认真写**：",
+        "N|· 三个月后回看，能立刻知道「当初为什么这么改」",
+        "N|· 出现问题时可以用 `git log` 快速定位是哪次改动引入的",
+        "N|· 团队协作时，别人能看懂你的改动意图",
+        "B|**推荐前缀约定**：`feat` 新功能 / `fix` 修 bug / `docs` 文档 / `chore` 杂项",
+        "B|内容较长时用 `git commit -F 文件名` 从文件读取多行说明"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "进阶·三个排查问题的实用命令",
+      "lines": [
+        "H|出问题时，先用这三个命令把情况看清楚",
+        "C|git log --oneline --graph --decorate   # 看历史与分支指向",
+        "C|git show HEAD:index.html > 旧版本.html  # 取出某次提交的文件",
+        "C|git diff HEAD~1 HEAD                    # 对比最近两次提交",
+        "C|git ls-remote origin                    # 远程仓库有哪些分支",
+        "B|本案例排查显示 bug 时，就用 `git show HEAD:index.html` 取出旧版本，",
+        "N|与修改后的版本对比，验证修复是否真的生效。"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "进阶·撤销与回退",
+      "lines": [
+        "H|做错了怎么办？分三种情况",
+        "B|**情况一：改了文件但还没 add**",
+        "N|· `git restore 文件名` —— 丢弃修改，恢复原样",
+        "B|**情况二：已经 add 但还没 commit**",
+        "N|· `git restore --staged 文件名` —— 移出暂存区，改动仍保留",
+        "B|**情况三：已经 commit**",
+        "N|· 还没推送：`git reset --soft HEAD~1` 撤销提交但保留改动",
+        "N|· **已经推送：用 `git revert <hash>`** —— 生成一次反向提交",
+        "Q|已推送的提交绝不要用 reset 改写历史，否则会和远程冲突。"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "进阶·分支与 Pull Request",
+      "lines": [
+        "H|多人协作或多功能并行时才需要分支",
+        "C|git switch -c feature/新功能    # 从当前分支新建并切换",
+        "C|git add -A && git commit -m \"...\" # 在新分支上提交",
+        "C|git push -u origin feature/新功能",
+        "B|推送后到 GitHub 上点 **Compare & pull request** 发起 PR",
+        "N|· 团队成员可以逐行审查、评论、请求修改",
+        "N|· 审查通过后点 Merge，代码才合并进 main",
+        "B|**单人小项目可以只用 main 一条分支**（本案例就是如此）"
+      ]
+    },
+    {
+      "layout": "image",
+      "title": "GitHub 上你能看到什么",
+      "image": "06_github_page.png",
+      "caption": "代码、提交历史、README、语言统计都在一个页面里"
+    },
+    {
+      "layout": "content",
+      "title": "GitHub 能做什么",
+      "lines": [
+        "H|不只是「存代码的地方」",
+        "B|**仓库托管** —— 云端备份，换电脑 clone 一下就能继续",
+        "B|**Pull Request** —— 代码审查与合并的标准流程",
+        "B|**Issue** —— 记录 bug 与需求，可与提交关联",
+        "B|**Actions** —— 自动化测试、构建、部署",
+        "B|**Pages** —— 直接把仓库里的网页发布成网站",
+        "N|本案例中，只要在 Settings → Pages 里选 main 分支，",
+        "N|就能把游戏上线到 rrafiya.github.io/git_course 直接在线玩。"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "避坑指南（都是本案例真实踩过的）",
+      "lines": [
+        "H|六个高频问题",
+        "B|**① 没配姓名邮箱** —— `git commit` 直接报错。先跑 `git config --global`",
+        "B|**② 以为 commit 就等于上传了** —— 必须再 `git push`",
+        "B|**③ 在网页建仓库时勾了 README** —— 会和本地历史冲突导致推送失败",
+        "B|**④ 把密钥写进代码** —— `.gitignore` 里先排除 `.env`、`*.key`",
+        "B|**⑤ Token 泄露** —— 用完立刻到 GitHub Settings 里吊销",
+        "B|**⑥ 提交信息只写「update」** —— 三个月后自己也看不懂"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "现在就可以开始的六步",
+      "lines": [
+        "H|从零到代码上云，六个命令",
+        "C|1.  git init -b main",
+        "C|2.  git config --global user.name / user.email",
+        "C|3.  git add -A && git commit -m \"feat: 初始提交\"",
+        "C|4.  在 GitHub 网页新建空仓库（不要勾 README）",
+        "C|5.  git remote add origin <仓库地址>",
+        "C|6.  git push -u origin main",
+        "Q|之后每改一次：git add -A → git commit -m \"...\" → git push"
+      ]
+    },
+    {
+      "layout": "content",
+      "title": "小结",
+      "lines": [
+        "H|记住三句话就够了",
+        "B|**① Git 是工具，GitHub 是网站** —— 两者独立，常一起用",
+        "B|**② 三区域 + 五步循环** —— 工作区 → 暂存区 → 本地仓库 → 远程仓库",
+        "B|**③ commit 是本地的，push 才上云** —— 这是最容易搞混的一点",
+        "N|",
+        "B|本案例做到了什么：",
+        "N|· 从空文件夹到 11 次结构清晰的提交",
+        "N|· 每次修改单独成一次提交，历史可追溯、可回退",
+        "N|· 完整的 README 文档与专用诊断工具一并纳入版本控制",
+        "Q|版本控制的价值不在于「备份」，而在于「每一步都能讲清楚为什么」。"
+      ]
+    }
+  ]
+}

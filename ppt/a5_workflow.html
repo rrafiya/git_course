@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1400px; height:780px; overflow:hidden; background:#0b1020;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif; color:#dbe6ff; }
+  .t { text-align:center; padding-top:24px; }
+  .t h1 { font-size:32px; color:#9fe8ff; }
+  .t p { font-size:15px; color:#6c7a99; margin-top:7px; }
+  .flow { display:flex; align-items:center; justify-content:center; gap:0; margin-top:40px; padding:0 34px; }
+  .st { width:212px; border-radius:12px; padding:16px 14px; min-height:196px; }
+  .s1 { background:#132a45; border:2px solid #2f6ea8; }
+  .s2 { background:#2d2711; border:2px solid #b08a2a; }
+  .s3 { background:#123023; border:2px solid #2f9e6a; }
+  .s4 { background:#2d1522; border:2px solid #b04a76; }
+  .n { font-size:12px; color:#7d8bab; font-family:Consolas,monospace; }
+  .h { font-size:18px; font-weight:700; margin:5px 0 10px; }
+  .s1 .h{color:#7fc4ff}.s2 .h{color:#ffd166}.s3 .h{color:#63f5a0}.s4 .h{color:#ff8fb4}
+  .st code { display:block; font-family:Consolas,monospace; font-size:13px; color:#cfe0ff;
+    background:#0a0f1c; border-radius:5px; padding:6px 8px; margin-bottom:7px; }
+  .st p { font-size:12.5px; color:#93a3c4; line-height:1.6; }
+  .ar { width:74px; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .ar .c { font-family:Consolas,monospace; font-size:12.5px; color:#9fe8ff; white-space:nowrap; }
+  .ar .l { width:100%; height:3px; background:#3a5580; position:relative; }
+  .ar .l:after { content:""; position:absolute; right:-1px; top:-6px;
+    border-left:11px solid #6f9fd8; border-top:7.5px solid transparent; border-bottom:7.5px solid transparent; }
+  .tip { margin:34px 46px 0; background:#101a2e; border-left:4px solid #ffd166;
+    border-radius:8px; padding:14px 18px; font-size:14px; color:#a8bcdd; line-height:1.85; }
+  .tip b { color:#ffd166; }
+  .tip code { font-family:Consolas,monospace; color:#9fe8ff; background:#0a0f1c; padding:1px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+  <div class="t">
+    <h1>日常开发的完整循环</h1>
+    <p>改代码 → 看状态 → 加暂存 → 提交 → 推送，五步走完一轮</p>
+  </div>
+
+  <div class="flow">
+    <div class="st s1">
+      <div class="n">STEP 1</div>
+      <div class="h">改代码</div>
+      <code>编辑 index.html</code>
+      <p>在工作区里正常修改文件。Git 会自动发现哪些文件变了，不需要你手动标记。</p>
+    </div>
+
+    <div class="ar"><span class="c">查看</span><div class="l"></div></div>
+
+    <div class="st s2">
+      <div class="n">STEP 2</div>
+      <div class="h">看状态</div>
+      <code>git status</code>
+      <code>git diff</code>
+      <p><b style="color:#ffd166">改之前先看</b>：确认哪些文件被改动、改了什么，避免误提交。</p>
+    </div>
+
+    <div class="ar"><span class="c">git add</span><div class="l"></div></div>
+
+    <div class="st s3">
+      <div class="n">STEP 3</div>
+      <div class="h">加暂存</div>
+      <code>git add &lt;文件&gt;</code>
+      <code>git add -A</code>
+      <p>把要提交的改动放进暂存区。可以只挑一个文件，不必全部提交。</p>
+    </div>
+
+    <div class="ar"><span class="c">git commit</span><div class="l"></div></div>
+
+    <div class="st s4">
+      <div class="n">STEP 4 · 5</div>
+      <div class="h">提交并推送</div>
+      <code>git commit -m "..."</code>
+      <code>git push</code>
+      <p>先在本地存一个版本快照，再上传到 GitHub。这两步是<b style="color:#ff8fb4">分开</b>的。</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>最容易搞混的一点</b>：<code>commit</code> 只是把版本存到<b>你本地</b>的 .git 里，
+    GitHub 上还看不到；必须再执行 <code>push</code> 才会同步到远程。
+    <br>本案例的每次修改都是「<b>先 commit 再 push</b>」，所以 GitHub 上的提交历史和本地完全一致。
+  </div>
+</body>
+</html>
