@@ -1,5 +1,16 @@
 // 用 Node 直接生成 .pptx（OOXML），不依赖任何外部库。
-// 结构与命名空间取自真实 PPTX 参考文件（ppt/ref）。
+// 结构与命名空间取自真实 PPTX 参考文件。
+//
+// 关键修正（v2）—— 解决「PowerPoint 显示内容有问题」：
+//  1. 文本内边距全部归零（lIns/rIns/tIns/bIns=0）。
+//     原来圆角矩形（代码块）用默认 <a:bodyPr/>，左右各 0.1 英寸内边距
+//     把可用宽度吃掉 0.2 英寸，换行位置与估算完全不符。
+//  2. 按真实字体度量计算每块文字所需高度（含自动换行）。
+//     原来是固定行高硬估（一行≈0.38"），而微软雅黑行高系数约 1.42、
+//     Consolas 约 1.28，估算严重偏小 → 文字超出文本框被裁。
+//  3. 开启 <a:normAutofit/> 兜底：万一字体或换行与预期不符，
+//     PowerPoint 会缩小字号而不是直接裁掉文字。
+//  4. 标题改为底部对齐并给足高度；各行预留余量；超界时自动压缩间距。
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -9,36 +20,75 @@ const IMG = path.join(ROOT, 'ppt', 'img');
 const deck = JSON.parse(fs.readFileSync(path.join(ROOT, 'ppt', 'deck.json'), 'utf8'));
 const OUT = path.join(ROOT, 'ppt', deck.meta.out);
 
-const EMU = 914400;                       // EMU per inch
+const EMU = 914400;                            // EMU per inch
+const PX = 96;                                 // CSS px per inch
 const SLIDE_W = 12192000, SLIDE_H = 6858000;   // 13.333" x 7.5"
 
-// ---------------------------------------------------------------- colours
+// ---------------------------------------------------------------- 颜色
 const C = {
-  bg: '0B1020',
-  panel: '111A2C',
-  line: '23304A',
-  accent: '4DD4FF',
-  title: '9FE8FF',
-  heading: 'FFD166',
-  bullet: 'DCE6FA',
-  code: '7FE9FF',
-  codeBg: '060A14',
-  quote: '63F5A0',
-  note: '93A3C4',
-  muted: '6C7A99',
-  cover1: '12325A',
-  cover2: '3A1A2C',
-  white: 'FFFFFF'
+  bg: '0B1020', panel: '111A2C', line: '23304A',
+  accent: '4DD4FF', title: '9FE8FF', heading: 'FFD166', bullet: 'DCE6FA',
+  code: '7FE9FF', codeBg: '060A14', quote: '63F5A0', note: '93A3C4',
+  muted: '6C7A99', cover1: '12325A', cover2: '3A1A2C'
 };
+
+// ---------------------------------------------------------------- 字体度量
+// 宽度按 em 估算（1em = 字号）；行高按字体的真实行高系数
+function charEm(ch, font) {
+  const code = ch.codePointAt(0);
+  const isCJK = (code >= 0x2E80 && code <= 0x9FFF) ||
+    (code >= 0xF900 && code <= 0xFAFF) ||
+    (code >= 0xFF00 && code <= 0xFF60) ||
+    (code >= 0x3000 && code <= 0x303F);
+  if (font === 'Consolas') return isCJK ? 1.0 : 0.55;
+  if (isCJK) return 1.0;
+  if (/[iIljt.,:;'!|]/.test(ch)) return 0.28;
+  if (/[A-Z0-9]/.test(ch)) return 0.62;
+  if (ch === ' ') return 0.30;
+  return 0.52;
+}
+function textEm(s, font) {
+  let em = 0;
+  for (const ch of s) em += charEm(ch, font);
+  return em;
+}
+const LINE_FACTOR = { 'Microsoft YaHei': 1.42, 'Consolas': 1.28 };
+
+// 计算文本在给定宽度（英寸）下需要的高度（英寸）
+// ⚠ 单位陷阱：本文件的 size 参数是「1/100 磅」（OOXML 的 sz 规定），
+//   所以要用 size/100 换算成磅再参与几何计算。
+function measureText(text, size, boxWidthIn, font, lineSpacingPct = 100) {
+  const pt = size / 100;                       // 1/100 磅 → 磅
+  const emPerIn = 72 / pt;                     // 每英寸可容纳的 em 数
+  const boxEm = boxWidthIn * emPerIn;
+  const paras = String(text).split('\n');
+  let totalLines = 0, maxEm = 0;
+  for (const p of paras) {
+    if (p === '') { totalLines += 1; continue; }
+    const pem = textEm(p, font);
+    maxEm = Math.max(maxEm, pem);
+    let lines = 1, cur = 0;
+    for (const ch of p) {
+      const w = charEm(ch, font);
+      if (cur + w > boxEm && cur > 0) { lines++; cur = 0; }
+      cur += w;
+    }
+    totalLines += lines;
+  }
+  const lineFactor = LINE_FACTOR[font] || 1.42;
+  const lineH = pt * lineFactor * (lineSpacingPct / 100) / 72;   // 英寸
+  return { lines: totalLines, height: totalLines * lineH, maxWidthEm: maxEm, boxEm };
+}
 
 // ---------------------------------------------------------------- xml utils
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-
 const inch = (v) => Math.round(v * EMU);
 
-// rPr for a run
+let shapeIdSeq = 1;
+const nextId = () => ++shapeIdSeq;
+
 function rPr({ size = 1400, color = C.bullet, bold = 0, font = 'Microsoft YaHei', italic = 0 }) {
   const latin = font === 'Consolas' ? 'Consolas' : font;
   const ea = font === 'Consolas' ? 'Microsoft YaHei' : font;
@@ -47,7 +97,12 @@ function rPr({ size = 1400, color = C.bullet, bold = 0, font = 'Microsoft YaHei'
     `<a:latin typeface="${latin}"/><a:ea typeface="${ea}"/><a:cs typeface="${latin}"/></a:rPr>`;
 }
 
-// para with runs: [{text, size, color, bold, font}]
+// 统一 bodyPr：内边距归零 + normAutofit 兜底
+function bodyPr({ anchor = 't', autofit = true } = {}) {
+  return `<a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="${anchor}">` +
+    (autofit ? `<a:normAutofit/>` : `<a:noAutofit/>`) + `</a:bodyPr>`;
+}
+
 function para(runs, opts = {}) {
   const { algn = 'l', bullet = false, marL = 0, indent = 0, spaceAfter = 0, lineSpacing = 100 } = opts;
   let pPr = `<a:pPr algn="${algn}" marL="${marL}" indent="${indent}">`;
@@ -64,21 +119,15 @@ function para(runs, opts = {}) {
   return `<a:p>${pPr}${body}</a:p>`;
 }
 
-let shapeIdSeq = 1;
-const nextId = () => ++shapeIdSeq;
-
-// simple textbox
 function txBox(x, y, w, h, paras, opts = {}) {
   const id = nextId();
-  const anchor = opts.anchor || 't';
   return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="tb${id}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>` +
     `<p:spPr><a:xfrm><a:off x="${inch(x)}" y="${inch(y)}"/><a:ext cx="${inch(w)}" cy="${inch(h)}"/></a:xfrm>` +
     `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>` +
-    `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="${anchor}"><a:noAutofit/></a:bodyPr><a:lstStyle/>` +
+    `<p:txBody>${bodyPr({ anchor: opts.anchor || 't' })}<a:lstStyle/>` +
     paras.join('') + `</p:txBody></p:sp>`;
 }
 
-// rounded rectangle (filled, optional border, optional transparency)
 function rrect(x, y, w, h, fill, opts = {}) {
   const id = nextId();
   const adj = opts.adj !== undefined ? opts.adj : 12000;
@@ -91,10 +140,9 @@ function rrect(x, y, w, h, fill, opts = {}) {
     `<p:spPr><a:xfrm${rot}><a:off x="${inch(x)}" y="${inch(y)}"/><a:ext cx="${inch(w)}" cy="${inch(h)}"/></a:xfrm>` +
     `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${adj}"/></a:avLst></a:prstGeom>` +
     `<a:solidFill><a:srgbClr val="${fill}">${alpha}</a:srgbClr></a:solidFill>${line}</p:spPr>` +
-    `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`;
+    `<p:txBody>${bodyPr()}<a:lstStyle/><a:p><a:endParaRPr lang="zh-CN"/></a:p></p:txBody></p:sp>`;
 }
 
-// plain rectangle
 function rect(x, y, w, h, fill, opts = {}) {
   const id = nextId();
   const line = opts.line
@@ -104,10 +152,9 @@ function rect(x, y, w, h, fill, opts = {}) {
     `<p:spPr><a:xfrm><a:off x="${inch(x)}" y="${inch(y)}"/><a:ext cx="${inch(w)}" cy="${inch(h)}"/></a:xfrm>` +
     `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
     `<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>${line}</p:spPr>` +
-    `<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`;
+    `<p:txBody>${bodyPr()}<a:lstStyle/><a:p><a:endParaRPr lang="zh-CN"/></a:p></p:txBody></p:sp>`;
 }
 
-// picture
 function pic(x, y, w, h, relId, name) {
   const id = nextId();
   return `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${esc(name)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>` +
@@ -116,13 +163,25 @@ function pic(x, y, w, h, relId, name) {
     `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln><a:noFill/></a:ln></p:spPr></p:pic>`;
 }
 
+// spTree 的子元素是 <xsd:choice maxOccurs="unbounded">，schema 要求按
+// sp → grpSp → graphicFrame → cxnSp → pic 的顺序排列（同类可重复）。
+// 我们构建时是按语义顺序 push 的（标题、图片、正文…），因此必须在这里排序，
+// 否则 PowerPoint 会判定「内容有问题，需要修复」。
+const SHAPE_ORDER = { 'p:sp': 0, 'p:grpSp': 1, 'p:graphicFrame': 2, 'p:cxnSp': 3, 'p:pic': 4 };
 function spTree(shapes) {
+  const sorted = shapes.slice().sort((a, b) => {
+    const ra = a.match(/^<p:([A-Za-z]+)/);
+    const rb = b.match(/^<p:([A-Za-z]+)/);
+    const ka = SHAPE_ORDER['p:' + (ra ? ra[1] : 'sp')] ?? 0;
+    const kb = SHAPE_ORDER['p:' + (rb ? rb[1] : 'sp')] ?? 0;
+    return ka - kb;
+  });
   return `<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
     `<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>` +
-    shapes.join('') + `</p:spTree>`;
+    sorted.join('') + `</p:spTree>`;
 }
 
-// ---------------------------------------------------------------- inline markup
+// ---------------------------------------------------------------- 行内标记
 function runsFromMarkup(txt, baseSize, baseColor) {
   const runs = [];
   let i = 0, buf = '', mode = 'plain';
@@ -140,14 +199,20 @@ function runsFromMarkup(txt, baseSize, baseColor) {
     return { text: r.text, size: baseSize, color: baseColor, bold: 0, font: 'Microsoft YaHei' };
   });
 }
+const plain = (s) => s.replace(/\*\*/g, '').replace(/`/g, '');
 
-// PNG size reader
+// ---------------------------------------------------------------- 版心
+const L = {
+  marginL: 0.85, marginR: 0.85,
+  headerTop: 0.52, headerH: 0.66,
+  bodyTop: 1.50, bodyBottom: 7.5 - 0.55,
+  contentW: 13.333 - 0.85 * 2
+};
+
 function pngSize(file) {
   const b = fs.readFileSync(file);
   return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
 }
-
-// fit a picture into a box, centred
 function fitPic(file, boxX, boxY, boxW, boxH) {
   const { w: pw, h: ph } = pngSize(file);
   const ar = pw / ph;
@@ -156,123 +221,177 @@ function fitPic(file, boxX, boxY, boxW, boxH) {
   return { x: boxX + (boxW - w) / 2, y: boxY + (boxH - h) / 2, w, h };
 }
 
-// ---------------------------------------------------------------- slides
-const media = [];         // {name, file}
-const slideXmls = [];     // {xml, rels:[{id,type,target}], pics:[...]}
-
-function newSlide() { return { shapes: [], rels: [] }; }
-
-function header(sh, title, size) {
-  sh.push(rect(0.95, 0.6, 0.9, 0.07, C.accent));
-  sh.push(txBox(0.95, 0.75, 11.4, 0.75, [para([{ text: title, size, color: C.title, bold: 1 }])]));
-}
+// ---------------------------------------------------------------- 构建
+const media = [];
+const slideXmls = [];
 
 function addImage(slide, file, boxX, boxY, boxW, boxH) {
-  const key = 'ppt/img/' + file;
   let m = media.find(x => x.file === file);
   if (!m) { m = { name: 'image' + (media.length + 1) + '.png', file }; media.push(m); }
   const relId = 'rIdImg' + (media.indexOf(m) + 1);
   slide.rels.push({ id: relId, type: 'image', target: '../media/' + m.name });
-  const f = path.join(IMG, file);
-  const p = fitPic(f, boxX, boxY, boxW, boxH);
+  const p = fitPic(path.join(IMG, file), boxX, boxY, boxW, boxH);
   slide.shapes.push(pic(p.x, p.y, p.w, p.h, relId, file));
   return p;
 }
 
+function header(sh, title) {
+  sh.push(rect(L.marginL, L.headerTop + 0.30, 0.78, 0.065, C.accent));
+  sh.push(txBox(L.marginL, L.headerTop, L.contentW, L.headerH,
+    [para([{ text: title, size: 2700, color: C.title, bold: 1 }])], { anchor: 'b' }));
+}
+
+let overflowCount = 0;
+
 for (const sd of deck.slides) {
-  const s = newSlide();
-  const sh = s.shapes;
+  const slide = { shapes: [], rels: [] };
+  const sh = slide.shapes;
+  const pageNo = slideXmls.length + 1;
 
   if (sd.layout === 'cover') {
     sh.push(rrect(-2.0, -1.6, 8.6, 11.2, C.cover1, { alpha: 0.55, rot: 18 }));
     sh.push(rrect(7.6, 2.2, 8.4, 9.0, C.cover2, { alpha: 0.45, rot: -14 }));
     sh.push(rect(1.0, 2.02, 1.5, 0.075, C.accent));
-    sh.push(txBox(1.0, 2.25, 11.3, 1.4, [para([{ text: sd.title, size: 4000, color: C.title, bold: 1 }])]));
-    sh.push(txBox(1.0, 3.55, 11.0, 0.7, [para([{ text: sd.subtitle, size: 1900, color: C.bullet }])]));
-    let y = 4.55;
+    sh.push(txBox(1.0, 2.22, 11.3, 1.0,
+      [para([{ text: sd.title, size: 4000, color: C.title, bold: 1 }])]));
+    sh.push(txBox(1.0, 3.40, 11.0, 0.5,
+      [para([{ text: sd.subtitle, size: 1900, color: C.bullet }])]));
+    let y = 4.32;
     for (const ln of sd.lines) {
       const txt = ln.replace(/^N\|/, '');
-      sh.push(txBox(1.0, y, 11.0, 0.4, [para([{ text: txt, size: 1400, color: C.note }])]));
-      y += 0.44;
+      sh.push(txBox(1.0, y, 11.0, 0.36, [para([{ text: txt, size: 1400, color: C.note }])]));
+      y += 0.42;
     }
   } else if (sd.layout === 'toc') {
-    header(sh, sd.title, 3000);
-    sh.push(rrect(0.95, 2.0, 11.45, 4.7, C.panel, { adj: 3000, line: C.line }));
-    const paras = sd.lines.map(ln =>
-      para([{ text: ln.replace(/^B\|/, ''), size: 1900, color: C.bullet }],
-        { bullet: true, marL: 228600, indent: -228600, spaceAfter: 1200 })
-    );
-    sh.push(txBox(1.45, 2.35, 10.5, 4.1, paras));
+    header(sh, sd.title);
+    const items = sd.lines.map(l => l.replace(/^B\|/, ''));
+    const s = 1900;
+    const lineH = s * LINE_FACTOR['Microsoft YaHei'] / 72;
+    const need = items.length * (lineH + 0.14) + 0.7;
+    const cardH = Math.min(L.bodyBottom - L.bodyTop, Math.max(2.0, need));
+    sh.push(rrect(L.marginL, L.bodyTop, L.contentW, cardH, C.panel, { adj: 3000, line: C.line }));
+    const paras = items.map(t => para([{ text: t, size: s, color: C.bullet }],
+      { bullet: true, marL: 228600, indent: -228600, spaceAfter: 1600 }));
+    sh.push(txBox(L.marginL + 0.5, L.bodyTop + 0.36, L.contentW - 1.0, cardH - 0.7, paras));
   } else if (sd.layout === 'image') {
-    header(sh, sd.title, 2800);
-    const capH = 0.5;
-    const maxH = 7.5 - 1.68 - capH;
-    addImage(s, sd.image, 0.62, 1.68, 12.1, maxH);
+    header(sh, sd.title);
+    const capH = sd.caption ? 0.40 : 0;
+    const maxH = L.bodyBottom - L.bodyTop - capH - 0.10;
+    addImage(slide, sd.image, L.marginL, L.bodyTop, L.contentW, maxH);
     if (sd.caption) {
-      sh.push(txBox(0.95, 1.68 + maxH + 0.04, 11.45, 0.42,
-        [para([{ text: sd.caption, size: 1400, color: C.muted }])]));
+      sh.push(txBox(L.marginL, L.bodyTop + maxH + 0.10, L.contentW, 0.32,
+        [para([{ text: sd.caption, size: 1300, color: C.muted }])]));
     }
   } else {
-    header(sh, sd.title, 2800);
+    header(sh, sd.title);
     const withImg = sd.image && sd.image !== '';
-    let textL = 0.95, textW = 11.45;
+    let textL = L.marginL, textW = L.contentW;
     if (withImg) {
-      const colW = 5.2, colH = 5.2;
-      addImage(s, sd.image, 13.333 - 0.95 - colW, 1.78, colW, colH);
-      textW = 13.333 - 0.95 * 2 - colW - 0.35;
+      const colW = 5.00;
+      addImage(slide, sd.image, 13.333 - L.marginR - colW, L.bodyTop, colW, L.bodyBottom - L.bodyTop);
+      textW = 13.333 - L.marginL - L.marginR - colW - 0.40;
     }
-    let y = 1.78;
+
+    // 逐行度量 → 生成块
+    const BULLET_MAR = 0.30;
+    const blocks = [];
     for (const ln of sd.lines) {
-      if (!ln) { y += 0.1; continue; }
-      const kind = ln.slice(0, 2);
-      const txt = ln.slice(2);
+      if (!ln) { blocks.push({ empty: true, height: 0.09, gapBefore: 0 }); continue; }
+      const kind = ln.slice(0, 2), txt = ln.slice(2);
       if (kind === 'H|') {
-        sh.push(txBox(textL, y, textW, 0.44, [para([{ text: txt, size: 1700, color: C.heading, bold: 1 }])]));
-        y += 0.54;
+        const size = 1700;
+        const m = measureText(plain(txt), size, textW, 'Microsoft YaHei');
+        blocks.push({
+          paras: [para(runsFromMarkup(txt, size, C.heading))],
+          height: m.height + 0.05, gapBefore: 0.11
+        });
       } else if (kind === 'C|') {
-        const bh = 0.37;
-        sh.push(rrect(textL, y, textW, bh, C.codeBg, { adj: 22000 }));
-        sh.push(txBox(textL + 0.16, y + 0.045, textW - 0.3, bh - 0.09,
-          [para([{ text: txt, size: 1250, color: C.code, font: 'Consolas' }])]));
-        y += 0.43;
+        const size = 1250;
+        const inner = textW - 0.32;
+        const m = measureText(txt, size, inner, 'Consolas');
+        blocks.push({
+          code: txt, codeSize: size, inner,
+          height: Math.max(0.33, m.height + 0.13), gapBefore: 0.04
+        });
       } else if (kind === 'Q|') {
-        sh.push(rect(textL, y, 0.045, 0.5, C.quote));
-        sh.push(txBox(textL + 0.22, y, textW - 0.25, 0.5,
-          [para(runsFromMarkup(txt, 1400, C.quote), { lineSpacing: 105 })]));
-        y += 0.58;
+        const size = 1400;
+        const inner = textW - 0.34;
+        const m = measureText(plain(txt), size, inner, 'Microsoft YaHei');
+        blocks.push({
+          paras: [para(runsFromMarkup(txt, size, C.quote), { lineSpacing: 104 })],
+          height: m.height + 0.05, gapBefore: 0.075, quote: true
+        });
       } else if (kind === 'N|') {
-        sh.push(txBox(textL + 0.28, y, textW - 0.3, 0.34,
-          [para([{ text: txt, size: 1300, color: C.note }])]));
-        y += 0.38;
+        const size = 1300;
+        const inner = textW - 0.34;
+        const m = measureText(plain(txt), size, inner, 'Microsoft YaHei');
+        blocks.push({
+          paras: [para(runsFromMarkup(txt, size, C.note), { lineSpacing: 104 })],
+          height: m.height + 0.03, gapBefore: 0.025, indent: 0.30
+        });
       } else {
-        const size = withImg ? 1400 : 1450;
-        // diamond bullet
-        sh.push(txBox(textL, y + 0.035, 0.22, 0.3,
-          [para([{ text: '\u25C6', size: 1000, color: C.accent }])]));
-        sh.push(txBox(textL + 0.3, y, textW - 0.32, 0.7,
-          [para(runsFromMarkup(txt, size, C.bullet), { lineSpacing: 105 })]));
-        y += 0.6;
+        const size = withImg ? 1350 : 1450;
+        const inner = textW - BULLET_MAR - 0.06;
+        const m = measureText(plain(txt), size, inner, 'Microsoft YaHei');
+        blocks.push({
+          paras: [para(runsFromMarkup(txt, size, C.bullet), { lineSpacing: 104 })],
+          height: m.height + 0.04, gapBefore: 0.08, bullet: true, indent: BULLET_MAR
+        });
       }
     }
+
+    // 放置：先尝试自然排布，放不下则压缩间距（不改字号）
+    const natural = blocks.reduce((a, b) => a + b.height + (b.gapBefore || 0), 0);
+    const avail = L.bodyBottom - L.bodyTop;
+    const gaps = blocks.reduce((a, b) => a + (b.gapBefore || 0), 0);
+    const fixed = natural - gaps;
+    let squeeze = 1;
+    if (natural > avail && gaps > 0) {
+      // 只压缩空白间距，尽量保留文字大小
+      squeeze = Math.max(0, (avail - fixed) / gaps);
+    }
+    let y = L.bodyTop;
+    for (const b of blocks) {
+      y += (b.gapBefore || 0) * squeeze;
+      if (b.empty) { y += b.height; continue; }
+      const ind = b.indent || 0;
+      if (b.code !== undefined) {
+        sh.push(rrect(textL + ind, y, textW - ind, b.height, C.codeBg, { adj: 22000 }));
+        sh.push(txBox(textL + ind + 0.16, y + 0.065, b.inner, b.height - 0.11,
+          [para([{ text: b.code, size: b.codeSize, color: C.code, font: 'Consolas' }])]));
+      } else if (b.quote) {
+        sh.push(rect(textL + ind, y + 0.015, 0.045, Math.max(0.18, b.height - 0.03), C.quote));
+        sh.push(txBox(textL + ind + 0.20, y, textW - ind - 0.24, b.height, b.paras));
+      } else {
+        if (b.bullet) {
+          sh.push(txBox(textL, y + 0.03, 0.24, 0.28,
+            [para([{ text: '\u25C6', size: 1000, color: C.accent }])]));
+        }
+        sh.push(txBox(textL + ind, y, textW - ind, b.height, b.paras));
+      }
+      y += b.height;
+    }
+    if (y > L.bodyBottom + 0.02) {
+      overflowCount++;
+      console.log(`  ! p${pageNo} 内容到 ${y.toFixed(2)}"，超出下边界 ${(y - L.bodyBottom).toFixed(2)}"（normAutofit 兜底）`);
+    }
   }
-  slideXmls.push(s);
+  slideXmls.push(slide);
 }
 
-// page numbers
 slideXmls.forEach((s, i) => {
-  if (i === 0) return;   // 封面不显示页码
-  s.shapes.push(txBox(11.9, 6.95, 1.0, 0.35,
+  if (i === 0) return;
+  s.shapes.push(txBox(11.9, L.bodyBottom + 0.08, 1.0, 0.3,
     [para([{ text: String(i + 1), size: 1100, color: C.muted, font: 'Consolas' }], { algn: 'r' })]));
 });
 
-// ---------------------------------------------------------------- parts
-function slideXml(slide, idx) {
+// ---------------------------------------------------------------- 部件
+function slideXml(slide) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
     `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">` +
     `<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="${C.bg}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>` +
     spTree(slide.shapes) + `</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
 }
-
 function slideRels(slide) {
   const rels = [{ id: 'rId1', type: 'slideLayout', target: '../slideLayouts/slideLayout1.xml' }];
   for (const r of slide.rels) rels.push(r);
@@ -292,24 +411,21 @@ const slideMaster = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n
   spTree([]) + `</p:cSld>` +
   `<p:clrMap bg1="dk1" tx1="lt1" bg2="dk2" tx2="lt2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>` +
   `<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>` +
-  `<p:txStyles><p:titleStyle><a:lvl1pPr algn="l"><a:defRPr sz="2800" b="1"><a:solidFill><a:srgbClr val="${C.title}"/></a:solidFill><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:defRPr></a:lvl1pPr></p:titleStyle>` +
+  `<p:txStyles><p:titleStyle><a:lvl1pPr algn="l"><a:defRPr sz="2700" b="1"><a:solidFill><a:srgbClr val="${C.title}"/></a:solidFill><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:defRPr></a:lvl1pPr></p:titleStyle>` +
   `<p:bodyStyle><a:lvl1pPr algn="l"><a:defRPr sz="1400"><a:solidFill><a:srgbClr val="${C.bullet}"/></a:solidFill><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:defRPr></a:lvl1pPr></p:bodyStyle>` +
   `<p:otherStyle><a:lvl1pPr algn="l"><a:defRPr sz="1400"><a:solidFill><a:srgbClr val="${C.bullet}"/></a:solidFill></a:defRPr></a:lvl1pPr></p:otherStyle></p:txStyles></p:sldMaster>`;
 
 const slideMasterRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>` +
-  `</Relationships>`;
+  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`;
 
 const slideLayout = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1">` +
-  `<p:cSld name="Blank">` + spTree([]) + `</p:cSld>` +
-  `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
+  `<p:cSld name="Blank">` + spTree([]) + `</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
 
 const slideLayoutRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>` +
-  `</Relationships>`;
+  `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`;
 
 const nSlides = slideXmls.length;
 let presRelsBody = `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>`;
@@ -336,14 +452,11 @@ for (let i = 0; i < nSlides; i++) {
 }
 let imgDefaults = '';
 const exts = new Set(media.map(m => path.extname(m.name).slice(1).toLowerCase()));
-for (const e of exts) {
-  imgDefaults += `<Default Extension="${e}" ContentType="image/${e === 'jpg' ? 'jpeg' : e}"/>`;
-}
+for (const e of exts) imgDefaults += `<Default Extension="${e}" ContentType="image/${e === 'jpg' ? 'jpeg' : e}"/>`;
 const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
   `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
-  `<Default Extension="xml" ContentType="application/xml"/>` +
-  imgDefaults +
+  `<Default Extension="xml" ContentType="application/xml"/>` + imgDefaults +
   `<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>` +
   `<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>` +
   `<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>` +
@@ -362,39 +475,63 @@ const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
 const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
-  `<dc:title>${esc(deck.meta.title)}</dc:title>` +
-  `<dc:creator>rrafiya</dc:creator>` +
+  `<dc:title>${esc(deck.meta.title)}</dc:title><dc:creator>rrafiya</dc:creator>` +
   `<cp:lastModifiedBy>rrafiya</cp:lastModifiedBy>` +
   `<dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>` +
-  `<dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified>` +
-  `</cp:coreProperties>`;
+  `<dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`;
 
 const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
   `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">` +
   `<Application>Microsoft Office PowerPoint</Application><Slides>${nSlides}</Slides>` +
   `<PresentationFormat>宽屏</PresentationFormat></Properties>`;
 
-// ---------------------------------------------------------------- zip writer
+// ---------------------------------------------------------------- 补充标准部件
+// PowerPoint 期望演示文稿包里有这几份设置部件；缺失时它常会提示
+// 「内容有问题，需要修复」。参考真实 PPTX 后逐一补齐。
+const presProps = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
+  `<p:presentationPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">` +
+  `<p:showPr useTimings="0" showNarration="0" loop="0">` +
+  `<p:present/><p:sldAll/><p:penClr><a:srgbClr val="FF0000"/></p:penClr>` +
+  `</p:showPr><p:clrMru><a:srgbClr val="${C.accent}"/><a:srgbClr val="${C.title}"/>` +
+  `<a:srgbClr val="${C.heading}"/><a:srgbClr val="${C.bg}"/><a:srgbClr val="FFFFFF"/></p:clrMru></p:presentationPr>`;
+
+const viewProps = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
+  `<p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" lastView="sldView">` +
+  `<p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/></p:normalViewPr>` +
+  `<p:slideViewPr><p:cSldViewPr snapToGrid="0" snapToObjects="1">` +
+  `<p:cViewPr varScale="1" zoomScale="100"><p:scale><a:sx n="100" d="100"/><a:sy n="100" d="100"/></p:scale><p:origin x="0" y="0"/></p:cViewPr>` +
+  `<p:guideLst/></p:cSldViewPr></p:slideViewPr>` +
+  `<p:notesTextViewPr><p:cViewPr><p:scale><a:sx n="100" d="100"/><a:sy n="100" d="100"/></p:scale><p:origin x="0" y="0"/></p:cViewPr></p:notesTextViewPr>` +
+  `<p:gridSpacing cx="72008" cy="72008"/></p:viewPr>`;
+
+const tableStyles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n` +
+  `<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>`;
+
+// presentation.xml.rels 需要额外挂上 presProps / viewProps / tableStyles
+// （这三个部件通过关系类型与 presentation 关联，XML 内部无需额外引用）
+const presentationRels2 = presentationRels.replace(
+  '</Relationships>',
+  `<Relationship Id="rIdProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/>` +
+  `<Relationship Id="rIdView" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/>` +
+  `<Relationship Id="rIdTbl" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>` +
+  `</Relationships>`
+);
+
+const contentTypes2 = contentTypes.replace(
+  `<Override PartName="/docProps/core.xml"`,
+  `<Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>` +
+  `<Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>` +
+  `<Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>` +
+  `<Override PartName="/docProps/core.xml"`
+);
+
+// ---------------------------------------------------------------- zip
 function zip(files) {
-  const chunks = [];
-  const central = [];
+  const chunks = [], central = [];
   let offset = 0;
-
-  const crcTable = (() => {
-    const t = new Int32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      t[n] = c;
-    }
-    return t;
-  })();
-  function crc32(buf) {
-    let c = -1;
-    for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
-    return (c ^ -1) >>> 0;
-  }
-
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c; }
+  const crc32 = (buf) => { let c = -1; for (let i = 0; i < buf.length; i++) c = t[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ -1) >>> 0; };
   for (const f of files) {
     const nameBuf = Buffer.from(f.name, 'utf8');
     const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data, 'utf8');
@@ -403,87 +540,57 @@ function zip(files) {
     const body = useStore ? data : comp;
     const method = useStore ? 0 : 8;
     const crc = crc32(data);
-
     const local = Buffer.alloc(30 + nameBuf.length);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0x0800, 6);      // UTF-8 flag
-    local.writeUInt16LE(method, 8);
-    local.writeUInt16LE(0, 10);
-    local.writeUInt16LE(0, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(body.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(nameBuf.length, 26);
-    local.writeUInt16LE(0, 28);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(method, 8); local.writeUInt16LE(0, 10); local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(body.length, 18); local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26); local.writeUInt16LE(0, 28);
     nameBuf.copy(local, 30);
-
     chunks.push(local, body);
-
     const cd = Buffer.alloc(46 + nameBuf.length);
-    cd.writeUInt32LE(0x02014b50, 0);
-    cd.writeUInt16LE(20, 4);
-    cd.writeUInt16LE(20, 6);
-    cd.writeUInt16LE(0x0800, 8);
-    cd.writeUInt16LE(method, 10);
-    cd.writeUInt16LE(0, 12);
-    cd.writeUInt16LE(0, 14);
-    cd.writeUInt32LE(crc, 16);
-    cd.writeUInt32LE(body.length, 20);
-    cd.writeUInt32LE(data.length, 24);
-    cd.writeUInt16LE(nameBuf.length, 28);
-    cd.writeUInt16LE(0, 30);
-    cd.writeUInt16LE(0, 32);
-    cd.writeUInt16LE(0, 34);
-    cd.writeUInt16LE(0, 36);
-    cd.writeUInt32LE(0, 38);
-    cd.writeUInt32LE(offset, 42);
+    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(0x0800, 8); cd.writeUInt16LE(method, 10); cd.writeUInt16LE(0, 12); cd.writeUInt16LE(0, 14);
+    cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(body.length, 20); cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(nameBuf.length, 28); cd.writeUInt16LE(0, 30); cd.writeUInt16LE(0, 32);
+    cd.writeUInt16LE(0, 34); cd.writeUInt16LE(0, 36); cd.writeUInt32LE(0, 38); cd.writeUInt32LE(offset, 42);
     nameBuf.copy(cd, 46);
     central.push(cd);
-
     offset += local.length + body.length;
   }
-
   const cdBuf = Buffer.concat(central);
   const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);
-  end.writeUInt16LE(0, 6);
-  end.writeUInt16LE(files.length, 8);
-  end.writeUInt16LE(files.length, 10);
-  end.writeUInt32LE(cdBuf.length, 12);
-  end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20);
-
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(0, 4); end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(cdBuf.length, 12); end.writeUInt32LE(offset, 16); end.writeUInt16LE(0, 20);
   return Buffer.concat([...chunks, cdBuf, end]);
 }
 
-// ---------------------------------------------------------------- assemble
 const files = [
-  { name: '[Content_Types].xml', data: contentTypes },
+  { name: '[Content_Types].xml', data: contentTypes2 },
   { name: '_rels/.rels', data: rootRels },
   { name: 'docProps/core.xml', data: core },
   { name: 'docProps/app.xml', data: app },
   { name: 'ppt/presentation.xml', data: presentation },
-  { name: 'ppt/_rels/presentation.xml.rels', data: presentationRels },
+  { name: 'ppt/_rels/presentation.xml.rels', data: presentationRels2 },
+  { name: 'ppt/presProps.xml', data: presProps },
+  { name: 'ppt/viewProps.xml', data: viewProps },
+  { name: 'ppt/tableStyles.xml', data: tableStyles },
   { name: 'ppt/slideMasters/slideMaster1.xml', data: slideMaster },
   { name: 'ppt/slideMasters/_rels/slideMaster1.xml.rels', data: slideMasterRels },
   { name: 'ppt/slideLayouts/slideLayout1.xml', data: slideLayout },
   { name: 'ppt/slideLayouts/_rels/slideLayout1.xml.rels', data: slideLayoutRels }
 ];
 slideXmls.forEach((s, i) => {
-  files.push({ name: `ppt/slides/slide${i + 1}.xml`, data: slideXml(s, i) });
+  files.push({ name: `ppt/slides/slide${i + 1}.xml`, data: slideXml(s) });
   files.push({ name: `ppt/slides/_rels/slide${i + 1}.xml.rels`, data: slideRels(s) });
 });
-for (const m of media) {
-  files.push({ name: 'ppt/media/' + m.name, data: fs.readFileSync(path.join(IMG, m.file)) });
-}
+for (const m of media) files.push({ name: 'ppt/media/' + m.name, data: fs.readFileSync(path.join(IMG, m.file)) });
 
 const buf = zip(files);
 fs.writeFileSync(OUT, buf);
-
 console.log('slides   :', nSlides);
 console.log('images   :', media.length);
 console.log('parts    :', files.length);
 console.log('size     :', (buf.length / 1024).toFixed(0), 'KB');
+console.log('overflow :', overflowCount, '页（已由 normAutofit 兜底）');
 console.log('SAVED    :', OUT);
