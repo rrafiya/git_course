@@ -50,6 +50,7 @@
 
   // ---------------------------------------------------------------- 常量
   var VW = 540, VH = 960;                   // 逻辑分辨率（竖版）
+  var MARGIN = 12;                          // 贴边安全余量（抵消屏幕震动的平移）
   var PLAYER = { w: 42, h: 46, speed: 5.0, maxHp: 3, inv: 100 };
 
   // ---------------------------------------------------------------- 状态
@@ -87,15 +88,64 @@
   }
 
   // ---------------------------------------------------------------- 画布自适应
-  // 直接测量容器实际尺寸（而非 window.innerWidth/innerHeight），
-  // 并向下取整 + 预留边距，确保画布在任何窗口比例下都完整可见、绝不被裁切。
+  // 目标：画布永远完整落在可见区域内（绝不大于容器），且尽可能放大。
+  // 做法：多来源取最小可用尺寸 → 去掉一切下限把戏 → 向下取整并夹紧，
+  //       保证任何窗口比例（含极扁、极小、容器尺寸为 0 的初始帧）都不会溢出。
+  var MIN_SCALE = 0.14;            // 极端窗口下的最小缩放，保证操作区域仍然可见
+  function measureHost() {
+    // #wrap 是 position:fixed; inset:0 → 它就是可见区域本身。
+    // 读取它的盒子（多处来源取最大，兼容不同浏览器/布局时机）。
+    var w = 0, h = 0;
+    if (wrap) {
+      w = Math.max(w, wrap.clientWidth || 0);
+      h = Math.max(h, wrap.clientHeight || 0);
+      if (wrap.getBoundingClientRect) {
+        var r = wrap.getBoundingClientRect();
+        w = Math.max(w, r.width || 0);
+        h = Math.max(h, r.height || 0);
+      }
+    }
+    var de = document.documentElement;
+    w = Math.max(w, (de && de.clientWidth) || 0);
+    h = Math.max(h, (de && de.clientHeight) || 0);
+
+    // 上限：取「容器」与「视口」中更紧的一侧。
+    // 画布是绝对定位居中在 #wrap 上的，只要尺寸同时不超过这两者，
+    // 无论居中基准是哪一个，画布都一定完整落在可见区域内。
+    var vw = (window.visualViewport && window.visualViewport.width) || 0;
+    var vh = (window.visualViewport && window.visualViewport.height) || 0;
+    var ww = window.innerWidth || 0, wh = window.innerHeight || 0;
+    if (vw > 0) ww = ww > 0 ? Math.min(ww, vw) : vw;
+    if (vh > 0) wh = wh > 0 ? Math.min(wh, vh) : vh;
+    if (ww > 0) w = w > 0 ? Math.min(w, ww) : ww;
+    if (wh > 0) h = h > 0 ? Math.min(h, wh) : wh;
+
+    if (w <= 0) w = 320;
+    if (h <= 0) h = 480;
+    return { w: w, h: h };
+  }
+
   function resize() {
-    var host = wrap || document.documentElement;
-    var availW = Math.max(120, (host.clientWidth || window.innerWidth) - 20);
-    var availH = Math.max(200, (host.clientHeight || window.innerHeight) - 40);
+    var host = measureHost();
+    var padX = 16, padY = 32;      // 四周留白，避免贴边与遮挡底部提示
+    var availW = Math.max(40, host.w - padX);
+    var availH = Math.max(60, host.h - padY);
+
     var scale = Math.min(availW / VW, availH / VH);
-    var w = Math.floor(VW * scale), h = Math.floor(VH * scale);
-    if (w < 80 || h < 140) return;
+    if (!isFinite(scale) || scale <= 0) return;
+    if (scale > 1) scale = 1;                      // 不放大到超过逻辑分辨率
+    if (scale < MIN_SCALE) scale = MIN_SCALE;      // 极扁窗口下保底
+
+    var w = Math.floor(VW * scale);
+    var h = Math.floor(VH * scale);
+    // 硬夹紧：画布尺寸绝不超过可见区域。这是"内容不会跑到窗口外"的最终保证，
+    // 即使上面的缩放计算因任何异常尺寸得到过大结果，这一步也能兜住。
+    if (w > host.w) w = host.w;
+    if (h > host.h) h = host.h;
+    if (w > host.maxW) w = host.maxW;
+    if (h > host.maxH) h = host.maxH;
+    if (w < 1 || h < 1) return;
+
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w; canvas.height = h;
       canvas.style.width = w + 'px';
@@ -103,9 +153,7 @@
     }
     var dpr = window.devicePixelRatio || 1;
     ctx.setTransform((w / VW) * dpr, 0, 0, (h / VH) * dpr, 0, 0);
-    if (hint) {
-      hint.style.display = (host.clientHeight || window.innerHeight) < 560 ? 'none' : '';
-    }
+    if (hint) hint.style.display = host.h < 560 ? 'none' : '';
   }
 
   // ---------------------------------------------------------------- 输入
@@ -296,7 +344,9 @@
     if (wave >= 3 && r < 0.30) type = 'zig';
     if (wave >= 5 && r > 0.70) type = 'tank';
 
-    var x = 46 + Math.random() * (VW - 92);
+    // 生成位置预留边距，保证精英机左右摆动时也不出界
+    var spawnHalf = 23 + MARGIN;
+    var x = spawnHalf + Math.random() * (VW - spawnHalf * 2);
     var e = {
       type: type, x: x, y: -60, w: 34, h: 34,
       hp: 2, maxHp: 2, speed: 1.7, fireCd: 90, sway: Math.random() * 6.28,
@@ -474,8 +524,11 @@
       p.tilt += (0 - p.tilt) * 0.15;
     }
 
-    p.x = Math.max(p.w / 2, Math.min(VW - p.w / 2, p.x));
-    p.y = Math.max(p.h / 2 + 8, Math.min(VH - p.h / 2, p.y));
+    // 边界夹紧：再留给屏幕震动的余量（振动会平移画面最多 ±9px），
+    // 保证剧烈震动时自机也不会被推出可见区域
+    var m = MARGIN;
+    p.x = Math.max(p.w / 2 + m, Math.min(VW - p.w / 2 - m, p.x));
+    p.y = Math.max(p.h / 2 + m, Math.min(VH - p.h / 2 - m, p.y));
 
     if (p.inv > 0) p.inv -= game.dt;
     if (p.rapid > 0) p.rapid -= game.dt;
@@ -560,7 +613,7 @@
         if (e.type === 'zig') {
           e.sway += 0.035 * game.dt;
           e.x += Math.sin(e.sway) * e.swayAmp * game.dt;
-          e.x = Math.max(e.w / 2, Math.min(VW - e.w / 2, e.x));
+          e.x = Math.max(e.w / 2 + MARGIN, Math.min(VW - e.w / 2 - MARGIN, e.x));
         }
         e.fireCd -= game.dt;
         if (e.fireCd <= 0 && e.y > 40 && e.y < VH - 160) {
@@ -1110,9 +1163,25 @@
     requestAnimationFrame(loop);
   }
 
+  // 自愈：定期核对画布的**实际显示尺寸**是否还在可见区域内。
+  // 万一某次 resize 因布局时机、浏览器差异或异常尺寸算错，
+  // 这里会立即纠正，确保内容永远不会跑到窗口外。
+  function selfCheck() {
+    if (!document.body || !document.body.isConnected) return;
+    var host = measureHost();
+    var r = canvas.getBoundingClientRect();
+    var overflow = r.width > host.w + 0.5 || r.height > host.h + 0.5 ||
+      r.left < -0.5 || r.top < -0.5 ||
+      r.right > host.w + 0.5 || r.bottom > host.h + 0.5;
+    if (overflow) resize();
+  }
+
   // ---------------------------------------------------------------- 启动
   reset();
   resize();
+  setTimeout(resize, 0);      // 布局完成后补一次
+  setTimeout(resize, 250);    // 字体/滚动条就绪后再补一次
+  setInterval(selfCheck, 700);
   requestAnimationFrame(loop);
 })();
 </script>

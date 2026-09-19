@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>雷霆战机 · 显示问题诊断</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0a0e1c; color:#c8d6f5; min-height:100vh;
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    padding:18px; line-height:1.6;
+  }
+  h1 { font-size:19px; color:#9fe8ff; margin-bottom:4px; }
+  .sub { color:#5f7199; font-size:12px; margin-bottom:14px; }
+  #verdict {
+    padding:14px 16px; border-radius:10px; font-size:17px; font-weight:700;
+    margin-bottom:14px; border:2px solid;
+  }
+  .ok   { background:#0d2a1a; border-color:#2fbf71; color:#7df5b0; }
+  .bad  { background:#2a0d14; border-color:#ff4d6d; color:#ff9db0; }
+  .warn { background:#2a240d; border-color:#e0b13a; color:#ffe08a; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin-bottom:14px; }
+  th,td { border:1px solid #1e2a52; padding:6px 9px; text-align:left; }
+  th { background:#131c38; color:#8ea2cc; font-weight:600; }
+  td.v { font-family:Consolas,monospace; color:#e8f0ff; }
+  .fail { color:#ff6b8a; font-weight:700; }
+  .pass { color:#5ce6a0; }
+  button {
+    background:#1b2950; color:#cfe4ff; border:1px solid #33518f; border-radius:7px;
+    padding:8px 14px; font-size:13px; cursor:pointer; margin:0 6px 8px 0;
+    font-family:inherit;
+  }
+  button:hover { background:#24396b; }
+  #frameWrap { position:relative; width:100%; height:520px; border:1px dashed #33518f;
+    border-radius:8px; overflow:hidden; background:#05060f; margin-bottom:12px; }
+  iframe { border:0; display:block; width:100%; height:100%; }
+  #outline {
+    position:absolute; border:3px solid #ff3b6b; pointer-events:none;
+    display:none; box-shadow:0 0 14px rgba(255,59,107,.8);
+  }
+  #outline::after {
+    content:'画布实际可见范围'; position:absolute; top:-22px; left:0;
+    background:#ff3b6b; color:#fff; font-size:11px; padding:1px 6px; border-radius:4px;
+    white-space:nowrap;
+  }
+  #report {
+    background:#0d1428; border:1px solid #1e2a52; border-radius:8px;
+    padding:12px; font-family:Consolas,monospace; font-size:12px; color:#9db4de;
+    white-space:pre-wrap; word-break:break-all; max-height:280px; overflow:auto;
+  }
+  .note { font-size:12px; color:#5f7199; margin:10px 0; }
+  code { background:#131c38; padding:1px 5px; border-radius:4px; color:#9fe8ff; }
+</style>
+</head>
+<body>
+
+<h1>雷霆战机 · 显示问题诊断</h1>
+<div class="sub">用于定位「内容显示不全 / 自机和敌人跑到窗口外」的真实原因。页面不会修改游戏文件。</div>
+
+<div id="verdict" class="warn">正在检测…</div>
+
+<div id="frameWrap">
+  <iframe id="game" src="index.html"></iframe>
+  <div id="outline"></div>
+</div>
+
+<button id="btnOutline">显示/隐藏画布边界</button>
+<button id="btnResize">重设游戏尺寸（触发 resize）</button>
+<button id="btnCopy">复制诊断报告</button>
+<button id="btnFull">在新标签页打开游戏</button>
+
+<table id="tbl">
+  <thead><tr><th style="width:34%">项目</th><th>实测值</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<div class="note">
+  如果你看到红色边框<strong>超出了虚线框</strong>，或表格里有 <span class="fail">✗</span> 项，
+  说明画布确实溢出了可见区域。请点「复制诊断报告」把结果发给我。
+</div>
+
+<pre id="report">等待数据…</pre>
+
+<script>
+(function () {
+  'use strict';
+  var frame = document.getElementById('game');
+  var outline = document.getElementById('outline');
+  var wrapBox = document.getElementById('frameWrap');
+  var tbody = document.querySelector('#tbl tbody');
+  var verdict = document.getElementById('verdict');
+  var report = document.getElementById('report');
+  var showOutline = true;
+
+  function num(v) { return (v === undefined || v === null || (typeof v === 'number' && !isFinite(v))) ? null : v; }
+  function f(v, d) { return num(v) === null ? '—' : Number(v).toFixed(d === undefined ? 1 : d); }
+
+  function collect() {
+    var out = { err: null, items: [], ok: true, win: {}, canvas: {}, game: null, worst: null };
+
+    // ---- 外层页面（本诊断页）自身信息
+    out.win = {
+      innerW: window.innerWidth, innerH: window.innerHeight,
+      dpr: window.devicePixelRatio || 1,
+      zoom: Math.round((window.outerWidth / window.innerWidth) * 100) || null,
+      docScrollW: document.documentElement.scrollWidth,
+      docScrollH: document.documentElement.scrollHeight
+    };
+
+    // ---- 游戏 iframe 内部
+    var w = frame.contentWindow, d = frame.contentDocument;
+    if (!w || !d) { out.err = '无法访问 iframe 内容（跨域限制）'; return out; }
+
+    var c = d.getElementById('game');
+    if (!c) { out.err = '未在页面中找到 #game 画布'; return out; }
+    var r = c.getBoundingClientRect();
+    var fr = frame.getBoundingClientRect();
+    var wrapR = wrapBox.getBoundingClientRect();
+    // iframe 在外层容器内的偏移（用于把画布坐标映射到红框定位）
+    out.offX = fr.left - wrapR.left;
+    out.offY = fr.top - wrapR.top;
+
+    // 画布相对 iframe 视口的坐标
+    out.canvas = {
+      cssW: r.width, cssH: r.height,
+      cssLeft: r.left, cssTop: r.top,
+      cssRight: r.right, cssBottom: r.bottom,
+      bufW: c.width, bufH: c.height,
+      attrW: Number(c.getAttribute('width')), attrH: Number(c.getAttribute('height')),
+      iframeW: fr.width, iframeH: fr.height,
+      dpr: w.devicePixelRatio || 1,
+      gameInnerW: w.innerWidth, gameInnerH: w.innerHeight,
+      gameScrollW: d ? d.documentElement.scrollWidth : null,
+      gameScrollH: d ? d.documentElement.scrollHeight : null,
+      bodyScrollW: d && d.body ? d.body.scrollWidth : null,
+      bodyScrollH: d && d.body ? d.body.scrollHeight : null
+    };
+
+    // ---- 检查项
+    var cv = out.canvas;
+    function item(name, ok, detail) {
+      out.items.push({ name: name, ok: ok, detail: detail });
+      if (!ok) out.ok = false;
+    }
+
+    item('画布宽度不超过可见区域', cv.cssW <= cv.gameInnerW + 0.5,
+      '画布 ' + f(cv.cssW) + 'px vs 可见宽 ' + cv.gameInnerW + 'px');
+    item('画布高度不超过可见区域', cv.cssH <= cv.gameInnerH + 0.5,
+      '画布 ' + f(cv.cssH) + 'px vs 可见高 ' + cv.gameInnerH + 'px');
+    item('画布不越过左/上边界', cv.cssLeft >= -0.5 && cv.cssTop >= -0.5,
+      'left=' + f(cv.cssLeft) + ' top=' + f(cv.cssTop));
+    item('画布不越过右/下边界',
+      cv.cssRight <= cv.gameInnerW + 0.5 && cv.cssBottom <= cv.gameInnerH + 0.5,
+      'right=' + f(cv.cssRight) + ' bottom=' + f(cv.cssBottom) + ' vs ' + cv.gameInnerW + 'x' + cv.gameInnerH);
+    item('画布缓冲区与显示尺寸一致',
+      Math.abs(cv.bufW - cv.cssW) <= 1.5 && Math.abs(cv.bufH - cv.cssH) <= 1.5,
+      'buffer ' + cv.bufW + 'x' + cv.bufH + ' vs css ' + f(cv.cssW) + 'x' + f(cv.cssH));
+    item('保持 540:960 宽高比', Math.abs(cv.cssH / cv.cssW - 960 / 540) < 0.02,
+      '实际比值 ' + f(cv.cssH / cv.cssW, 4) + '，应为 1.7778');
+    item('游戏页面无滚动', cv.gameScrollW <= cv.gameInnerW + 1 && cv.gameScrollH <= cv.gameInnerH + 1,
+      'scroll ' + cv.gameScrollW + 'x' + cv.gameScrollH + ' vs ' + cv.gameInnerW + 'x' + cv.gameInnerH);
+    item('画布属性尺寸（HTML width/height）', true,
+      'width=' + cv.attrW + ' height=' + cv.attrH + '（若是 540x960 而缓冲区更小，说明 resize 未生效）');
+
+    // ---- 采样画布像素，找出「实际绘制内容」的包围盒
+    // 比读取内部状态更可靠：直接看真实渲染结果。
+    try {
+      var sw = c.width, sh = c.height;
+      var tmp = d.createElement('canvas');
+      tmp.width = sw; tmp.height = sh;
+      var tctx = tmp.getContext('2d');
+      tctx.drawImage(c, 0, 0);
+      var data = tctx.getImageData(0, 0, sw, sh).data;
+      var minX = sw, minY = sh, maxX = -1, maxY = -1, lit = 0, samples = 0;
+      var stepX = Math.max(1, Math.floor(sw / 160)), stepY = Math.max(1, Math.floor(sh / 240));
+      for (var y = 0; y < sh; y += stepY) {
+        for (var x = 0; x < sw; x += stepX) {
+          var i = (y * sw + x) * 4;
+          samples++;
+          // 星空/机体/粒子都远亮于底色(#05060f)，用较高阈值挑出"实体内容"
+          var lum = data[i] + data[i + 1] + data[i + 2];
+          if (lum > 150) {
+            lit++;
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+      }
+      out.canvas.contents = {
+        samples: samples, lit: lit,
+        minX: maxX >= 0 ? minX : null, maxX: maxX >= 0 ? maxX : null,
+        minY: maxY >= 0 ? minY : null, maxY: maxY >= 0 ? maxY : null,
+        ratio: samples ? lit / samples : 0
+      };
+      var ct = out.canvas.contents;
+      out.items.push({
+        name: '画布内确有绘制内容（非空白）', ok: ct.lit > 0,
+        detail: ct.lit > 0
+          ? ('采样 ' + ct.samples + ' 点，命中内容 ' + ct.lit + ' 点（' + (100 * ct.ratio).toFixed(1) + '%）')
+          : '画布几乎全黑 —— 可能完全没有渲染'
+      });
+      if (!ct.lit) out.ok = false;
+      if (ct.maxX !== null) {
+        var inBuf = ct.minX >= 0 && ct.maxY <= sh && ct.maxX <= sw;
+        out.items.push({
+          name: '绘制内容落在画布缓冲区内', ok: inBuf,
+          detail: '内容包围盒 x:' + ct.minX + '..' + ct.maxX + ' y:' + ct.minY + '..' + ct.maxY +
+            '  缓冲 ' + sw + 'x' + sh
+        });
+        if (!inBuf) out.ok = false;
+      }
+    } catch (e) {
+      out.items.push({ name: '采样画布像素', ok: true, detail: '不可读（' + e.message + '），此项跳过' });
+    }
+
+    // ---- 计算最严重溢出量
+    var ovR = cv.cssRight - cv.gameInnerW, ovB = cv.cssBottom - cv.gameInnerH;
+    var ovL = -cv.cssLeft, ovT = -cv.cssTop;
+    var maxOv = Math.max(ovR, ovB, ovL, ovT);
+    if (maxOv > 0.5) {
+      out.worst = '溢出 ' + f(maxOv) + 'px（右 ' + f(Math.max(0, ovR)) +
+        ' / 下 ' + f(Math.max(0, ovB)) + ' / 左 ' + f(Math.max(0, ovL)) + ' / 上 ' + f(Math.max(0, ovT)) + '）';
+    }
+    return out;
+  }
+
+  function render() {
+    var o = collect();
+    tbody.innerHTML = '';
+
+    function row(k, v, cls) {
+      var tr = document.createElement('tr');
+      var td1 = document.createElement('td'); td1.textContent = k;
+      var td2 = document.createElement('td'); td2.className = 'v' + (cls ? ' ' + cls : '');
+      td2.textContent = v;
+      tr.appendChild(td1); tr.appendChild(td2); tbody.appendChild(tr);
+    }
+
+    if (o.err) {
+      verdict.className = 'warn';
+      verdict.textContent = '⚠ ' + o.err;
+    } else if (o.ok) {
+      verdict.className = 'ok';
+      verdict.textContent = '✅ 未检测到显示问题：画布完整落在可见区域内' + (o.worst ? '（' + o.worst + '）' : '');
+    } else {
+      verdict.className = 'bad';
+      verdict.textContent = '❌ 检测到显示问题' + (o.worst ? '：' + o.worst : '');
+    }
+
+    row('浏览器视口', o.win.innerW + ' × ' + o.win.innerH + '   dpr=' + o.win.dpr +
+      (o.win.zoom ? '   估算缩放≈' + o.win.zoom + '%' : ''));
+    if (o.err) { report.textContent = o.err; return; }
+
+    var cv = o.canvas;
+    row('游戏 iframe 可见区域', cv.iframeW.toFixed(1) + ' × ' + cv.iframeH.toFixed(1));
+    row('游戏页面 window 视口', cv.gameInnerW + ' × ' + cv.gameInnerH + '   dpr=' + cv.dpr);
+    row('画布显示尺寸 (CSS)', cv.cssW.toFixed(1) + ' × ' + cv.cssH.toFixed(1));
+    row('画布缓冲区尺寸', cv.bufW + ' × ' + cv.bufH);
+    row('画布 HTML 属性尺寸', cv.attrW + ' × ' + cv.attrH);
+    row('画布位置 left / top', cv.cssLeft.toFixed(1) + ' / ' + cv.cssTop.toFixed(1));
+    row('画布右下角 right / bottom', cv.cssRight.toFixed(1) + ' / ' + cv.cssBottom.toFixed(1));
+    row('游戏页面滚动尺寸', cv.gameScrollW + ' × ' + cv.gameScrollH);
+    if (cv.contents && cv.contents.lit) {
+      row('实际绘制内容包围盒',
+        'x ' + cv.contents.minX + '..' + cv.contents.maxX +
+        '  y ' + cv.contents.minY + '..' + cv.contents.maxY +
+        '   （画布缓冲 ' + cv.bufW + '×' + cv.bufH + '）');
+    }
+
+    o.items.forEach(function (it) {
+      row((it.ok ? '✅ ' : '✗ ') + it.name, it.detail, it.ok ? '' : 'fail');
+    });
+
+    // 把画布实际范围画成红框。
+    // 画布坐标相对 iframe 视口，红框定位在外层容器上，因此加上 iframe 的偏移。
+    if (showOutline && !o.err) {
+      outline.style.display = 'block';
+      outline.style.left = (o.offX + cv.cssLeft) + 'px';
+      outline.style.top = (o.offY + cv.cssTop) + 'px';
+      outline.style.width = cv.cssW + 'px';
+      outline.style.height = cv.cssH + 'px';
+    } else {
+      outline.style.display = 'none';
+    }
+
+    // 文本报告（便于复制粘贴）
+    var lines = [];
+    lines.push('=== 雷霆战机 显示诊断 ===');
+    lines.push('时间: ' + new Date().toLocaleString());
+    lines.push('UA: ' + navigator.userAgent);
+    lines.push('浏览器视口: ' + o.win.innerW + 'x' + o.win.innerH + ' dpr=' + o.win.dpr +
+      (o.win.zoom ? ' 缩放≈' + o.win.zoom + '%' : ''));
+    lines.push('游戏页面视口: ' + cv.gameInnerW + 'x' + cv.gameInnerH + ' dpr=' + cv.dpr);
+    lines.push('iframe 区域: ' + cv.iframeW.toFixed(1) + 'x' + cv.iframeH.toFixed(1));
+    lines.push('画布 CSS: ' + cv.cssW.toFixed(1) + 'x' + cv.cssH.toFixed(1) +
+      ' @ (' + cv.cssLeft.toFixed(1) + ',' + cv.cssTop.toFixed(1) + ') -> (' +
+      cv.cssRight.toFixed(1) + ',' + cv.cssBottom.toFixed(1) + ')');
+    lines.push('画布 buffer: ' + cv.bufW + 'x' + cv.bufH + '   属性: ' + cv.attrW + 'x' + cv.attrH);
+    lines.push('游戏页面滚动: ' + cv.gameScrollW + 'x' + cv.gameScrollH);
+    lines.push('结论: ' + (o.ok ? '未检出溢出' : '检出溢出 ' + (o.worst || '')));
+    lines.push('--- 明细 ---');
+    o.items.forEach(function (it) { lines.push((it.ok ? '[OK] ' : '[FAIL] ') + it.name + ' :: ' + it.detail); });
+    report.textContent = lines.join('\n');
+  }
+
+  document.getElementById('btnOutline').addEventListener('click', function () {
+    showOutline = !showOutline; render();
+  });
+  document.getElementById('btnResize').addEventListener('click', function () {
+    try { frame.contentWindow.dispatchEvent(new Event('resize')); } catch (e) { }
+    setTimeout(render, 120);
+  });
+  document.getElementById('btnFull').addEventListener('click', function () {
+    window.open('index.html', '_blank');
+  });
+  document.getElementById('btnCopy').addEventListener('click', function () {
+    var t = report.textContent;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () { alert('已复制，可直接粘贴给我'); },
+        function () { alert('复制失败，请手动选中下方报告文本'); });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); alert('已复制'); } catch (e) { alert('请手动复制'); }
+      document.body.removeChild(ta);
+    }
+  });
+
+  frame.addEventListener('load', function () { setTimeout(render, 400); });
+  setTimeout(render, 600);
+  setInterval(render, 900);
+  window.addEventListener('resize', render);
+})();
+</script>
+</body>
+</html>
