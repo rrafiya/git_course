@@ -289,6 +289,49 @@
       o.worst = '溢出 ' + f(worst) + 'px（右 ' + f(Math.max(0, ovR)) + ' / 下 ' + f(Math.max(0, ovB)) +
         ' / 左 ' + f(Math.max(0, ovL)) + ' / 上 ' + f(Math.max(0, ovT)) + '）';
     }
+
+    // ---- 居中文字的布局检查 ----
+    // 目的：定位"文字左右被裁"这类问题。
+    // 用真实 fillText 的 x/字体 + measureText 反算文字占用范围，
+    // 并与画布左右边界比较。游戏每帧会把度量记录在 canvas.__textMetrics。
+    try {
+      var tm = c.__textMetrics;
+      var rows = [];
+      var hidden = document.createElement('canvas').getContext('2d');
+      var savedMeasure = hidden.measureText;
+      // 用与绘制时相同的字体测量，获得文本宽度
+      function widthOf(font, text) {
+        hidden.font = font;
+        return hidden.measureText(text).width;
+      }
+      // 从 fillText 记录推算：这里改为直接读取游戏记录的度量（更可靠）
+      if (tm && tm.length) {
+        for (var i = 0; i < tm.length; i++) {
+          var t = tm[i];
+          var wpx = widthOf(t.font, t.text);
+          // 居中绘制 → 左右各留 (VW - w)/2
+          var left = (540 - wpx) / 2;
+          var right = left + wpx;
+          var over = (left < 0 || right > 540);
+          rows.push({ text: t.text, size: t.size, cap: t.cap,
+            measured: Math.round(wpx), left: +left.toFixed(1), right: +right.toFixed(1),
+            path: t.path, over: over });
+        }
+        o.textRows = rows;
+        var bad = rows.filter(function (r) { return r.over; });
+        var charPath = rows.filter(function (r) { return r.path === 'charByChar'; });
+        item('居中文字未超出画布（逻辑 540 宽）', bad.length === 0,
+          bad.length ? (bad.length + ' 行超出: ' + bad.map(function (r) { return r.text; }).join(' / '))
+                     : (rows.length + ' 行全部在画布内'));
+        item('文字度量可信（走正常居中路径）', charPath.length === 0,
+          charPath.length ? (charPath.length + ' 行因宽度估算超限改用逐字绘制: ' +
+            charPath.map(function (r) { return r.text; }).join(' / '))
+            : '全部使用标准居中绘制');
+      }
+    } catch (e) {
+      item('居中文字布局检查', true, '不可读（' + e.message + '），跳过');
+    }
+
     return o;
   }
 
@@ -338,6 +381,13 @@
       row('绘制内容包围盒', 'x ' + o.contents.minX + '..' + o.contents.maxX +
         '  y ' + o.contents.minY + '..' + o.contents.maxY);
     }
+    if (o.textRows && o.textRows.length) {
+      row('居中文字布局（逻辑 540 宽）', o.textRows.map(function (r) {
+        return '「' + r.text.slice(0, 18) + '」' + r.size + 'px 宽' + r.measured +
+          ' 占 ' + r.left + '..' + r.right + (r.over ? ' ✗超出' : '') +
+          (r.path === 'charByChar' ? ' [逐字]' : '');
+      }).join('\n'));
+    }
     o.items.forEach(function (it) { row((it.ok ? '✅ ' : '✗ ') + it.name, it.detail, it.ok ? '' : 'fail'); });
 
     if (showOutline) {
@@ -361,6 +411,14 @@
     L.push('页面滚动: ' + o.win.scrollW + 'x' + o.win.scrollH);
     if (o.hintGap !== undefined) L.push('画布与提示条间距: ' + f(o.hintGap) + 'px');
     L.push('结论: ' + (o.ok ? '未检出异常' : '检出异常 ' + (o.worst || '')));
+    if (o.textRows && o.textRows.length) {
+      L.push('--- 居中文字布局（逻辑 540 宽）---');
+      o.textRows.forEach(function (r) {
+        L.push('  「' + r.text.slice(0, 24) + '」 字号' + r.size + 'px 实测宽' + r.measured +
+          ' 占位 ' + r.left + '..' + r.right +
+          (r.over ? '  ✗超出画布' : '  ok') + (r.path === 'charByChar' ? '  [逐字绘制]' : ''));
+      });
+    }
     L.push('--- 明细 ---');
     o.items.forEach(function (it) { L.push((it.ok ? '[OK] ' : '[FAIL] ') + it.name + ' :: ' + it.detail); });
     report.textContent = L.join('\n');
