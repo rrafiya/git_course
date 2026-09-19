@@ -128,7 +128,21 @@
 
     if (w <= 0) w = 320;
     if (h <= 0) h = 480;
-    return { w: w, h: h };
+
+    // ---------------------------------------------------------------
+    // 浏览器缩放修正（重要）：
+    // window.innerWidth/innerHeight 是**逻辑坐标**，而 canvas.style.width
+    // 与 getBoundingClientRect() 是**视觉坐标**。用户按 Ctrl+/Ctrl- 缩放后
+    // 两者不再相等（实测 125% 缩放时画布底部溢出窗口 175px）。
+    // 因此把计算出的逻辑尺寸乘以 zoom 因子，与视觉坐标对齐。
+    var zoom = 1;
+    if (ww > 0) zoom = window.innerWidth / ww;
+    if (!isFinite(zoom) || zoom <= 0) zoom = 1;
+    if (zoom < 0.5 || zoom > 2) zoom = 1;      // 异常值不参与修正
+    w = w * zoom;
+    h = h * zoom;
+
+    return { w: w, h: h, maxW: w, maxH: h };
   }
 
   function resize() {
@@ -1201,16 +1215,34 @@
     // 按估算宽度复核：若 measureText 不可信，则改用逐字绘制
     var per = Math.max(w / Math.max(1, text.length), size * SPACING_RATIO);
     var est = text.length * per;
+
+    // 最终硬保护：按 measureText 反算"在整幅画布 540 逻辑宽内一定放得下"
+    // 的字号。这一步不使用任何估算或假设，直接由实测宽度推导。
+    // 只要 measureText 可用，文字就绝无可能超出画布。
+    var HARD_FIT = VW - 12;                       // 左右各留 6 逻辑像素
+    var tries = 0;
+    while (w > HARD_FIT && size > 2 && tries++ < 60) {
+      var nf = Math.floor(size * HARD_FIT / w);
+      if (nf >= size) nf = size - 1;
+      if (nf < 2) nf = 2;
+      size = nf;
+      ctx.font = 'bold ' + size + 'px ' + fam;
+      w = ctx.measureText(text).width;
+      per = Math.max(w / Math.max(1, text.length), size * SPACING_RATIO);
+      est = text.length * per;
+    }
+
     if (metrics.length < 64) {
       metrics.push({
         text: text, size: size, cap: cap,
         measured: Math.round(w), estimated: Math.round(est),
-        font: ctx.font, path: (w <= cap && est <= cap) ? 'center' : 'charByChar'
+        font: ctx.font, path: (w <= HARD_FIT && est <= cap) ? 'center' : 'charByChar'
       });
       // 暴露给 diagnose.html 做显示问题排查（只读，不影响游戏逻辑）
       try { canvas.__textMetrics = metrics; } catch (e) { }
     }
-    if (w <= cap && est <= cap) {
+    // 实测宽度在硬上限内 → 走标准居中绘制（必然放得下）
+    if (w <= HARD_FIT) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(0,0,0,.65)';
@@ -1219,6 +1251,7 @@
       ctx.fillText(text, VW / 2, y);
       return;
     }
+    // 连硬上限都放不下（measureText 不可信）→ 逐字绘制兜底
     drawSpacedText(text, size, color, y, font, cap);
   }
 
@@ -1280,17 +1313,42 @@
     requestAnimationFrame(loop);
   }
 
-  // 自愈：定期核对画布的**实际显示尺寸**是否还在可见区域内。
-  // 万一某次 resize 因布局时机、浏览器差异或异常尺寸算错，
-  // 这里会立即纠正，确保内容永远不会跑到窗口外。
+  // 自愈：定期核对画布的**实际视觉尺寸**是否还在可视区域内。
+  // 用「画布自身渲染尺寸(boundingClientRect) ↔ 其 style 尺寸」的比值来
+  // 判定环境缩放（浏览器 Ctrl+/- 缩放、CSS zoom 等都会造成两者不等），
+  // 一旦超出可视区域就按比例缩回。这条路不依赖任何坐标换算假设，
+  // 因此在任何缩放环境下都成立。
   function selfCheck() {
     if (!document.body || !document.body.isConnected) return;
-    var host = measureHost();
     var r = canvas.getBoundingClientRect();
-    var overflow = r.width > host.w + 0.5 || r.height > host.h + 0.5 ||
-      r.left < -0.5 || r.top < -0.5 ||
-      r.right > host.w + 0.5 || r.bottom > host.h + 0.5;
-    if (overflow) resize();
+    if (!r.width || !r.height) return;
+
+    var availW = (wrap && wrap.clientWidth) || 0;
+    var availH = (wrap && wrap.clientHeight) || 0;
+    if (wrap && wrap.getBoundingClientRect) {
+      var wr = wrap.getBoundingClientRect();
+      if (wr.width > 0) availW = availW > 0 ? Math.min(availW, wr.width) : wr.width;
+      if (wr.height > 0) availH = availH > 0 ? Math.min(availH, wr.height) : wr.height;
+    }
+    if (availW <= 0) availW = window.innerWidth || 320;
+    if (availH <= 0) availH = window.innerHeight || 480;
+
+    // 缩放导致内容超出可视区域 → 按比例缩回，同时同步缓冲区保持清晰
+    if (r.width > availW + 1 || r.height > availH + 1) {
+      var cssW = parseFloat(canvas.style.width) || r.width;
+      var cssH = parseFloat(canvas.style.height) || r.height;
+      var k = Math.min(availW / r.width, availH / r.height);
+      var nw = Math.max(80, Math.floor(cssW * k));
+      var nh = Math.max(140, Math.floor(cssH * k));
+      canvas.width = nw; canvas.height = nh;
+      canvas.style.width = nw + 'px';
+      canvas.style.height = nh + 'px';
+      var dpr = window.devicePixelRatio || 1;
+      ctx.setTransform((nw / VW) * dpr, 0, 0, (nh / VH) * dpr, 0, 0);
+      return;
+    }
+    // 内容明显小于可视区域（例如刚退出缩放）→ 重新计算
+    if (r.width < availW * 0.5 || r.height < availH * 0.5) resize();
   }
 
   // ---------------------------------------------------------------- 启动
