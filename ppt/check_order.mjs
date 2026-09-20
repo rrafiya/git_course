@@ -15,6 +15,8 @@ for (let i = 0; i < n; i++) {
   const lho = b.readUInt32LE(p + 42), csize = b.readUInt32LE(p + 20);
   const name = b.toString('utf8', p + 46, p + 46 + nl);
   const lnl = b.readUInt16LE(lho + 26), lel = b.readUInt16LE(lho + 28);
+  // 跳过显式目录条目（PowerPoint 保存时会写入，0 字节，解压会报错）
+  if (name.endsWith('/') || csize === 0) { p += 46 + nl + el + cl; continue; }
   parts.set(name, zlib.inflateRawSync(b.subarray(lho + 30 + lnl + lel, lho + 30 + lnl + lel + csize)).toString('utf8'));
   p += 46 + nl + el + cl;
 }

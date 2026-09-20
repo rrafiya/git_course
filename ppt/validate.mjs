@@ -18,6 +18,7 @@ for (let i = b.length - 22; i >= 0; i--) if (b.readUInt32LE(i) === 0x06054b50) {
 if (e < 0) { bad('找不到 EOCD'); process.exit(1); }
 const n = b.readUInt16LE(e + 10), cdOff = b.readUInt32LE(e + 16);
 const entries = [];
+let dirEntries = 0;
 let p = cdOff;
 for (let i = 0; i < n; i++) {
   if (b.readUInt32LE(p) !== 0x02014b50) { bad('中央目录签名错误'); break; }
@@ -25,11 +26,15 @@ for (let i = 0; i < n; i++) {
   const csize = b.readUInt32LE(p + 20), usize = b.readUInt32LE(p + 24);
   const nl = b.readUInt16LE(p + 28), el = b.readUInt16LE(p + 30), cl = b.readUInt16LE(p + 32);
   const lho = b.readUInt32LE(p + 42);
-  entries.push({ name: b.toString('utf8', p + 46, p + 46 + nl), method, crc, csize, usize, lho });
+  const nm = b.toString('utf8', p + 46, p + 46 + nl);
+  // 跳过显式目录条目：PowerPoint 保存时会写入 "_rels/"、"ppt/media/" 这类
+  // 目录项，它们不是文件，不应参与「内容类型覆盖」与「图片有效性」检查。
+  if (nm.endsWith('/')) { p += 46 + nl + el + cl; dirEntries++; continue; }
+  entries.push({ name: nm, method, crc, csize, usize, lho });
   p += 46 + nl + el + cl;
 }
-if (entries.length !== n) bad('中央目录条目数不符');
-else ok(`ZIP 中央目录完整（${n} 个条目）`);
+if (entries.length + dirEntries !== n) bad('中央目录条目数不符');
+else ok(`ZIP 中央目录完整（${n} 个条目，其中 ${dirEntries} 个目录项已忽略）`);
 
 const tbl = (() => { const t = new Int32Array(256); for (let k = 0; k < 256; k++) { let c = k; for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[k] = c; } return t; })();
 const crc32 = (buf) => { let c = -1; for (let i = 0; i < buf.length; i++) c = tbl[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ -1) >>> 0; };
